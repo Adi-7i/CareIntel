@@ -9,20 +9,21 @@ dependencies = [
     # Web framework
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.30.0",
-
     # Configuration
     "pydantic-settings>=2.5.0",
-
     # Database (async)
     "sqlalchemy[asyncio]>=2.0.35",
     "asyncpg>=0.29.0",
     "alembic>=1.13.0",
-
     # Logging
     "python-json-logger>=2.0.7",
-
     # Utilities
     "python-ulid>=3.0.0",
+    "pyjwt>=2.14.0",
+    "cryptography>=50.0.1",
+    "passlib>=1.7.4",
+    "bcrypt>=5.0.0",
+    "email-validator>=2.1.0",
 ]
 
 [project.optional-dependencies]
@@ -123,6 +124,8 @@ markers = [
 filterwarnings = [
     "error",
     "ignore::DeprecationWarning:asyncio",
+    "ignore::DeprecationWarning:passlib.*",
+    "ignore::DeprecationWarning:crypt",
     "ignore::pytest.PytestUnraisableExceptionWarning",
 ]
 
@@ -137,3 +140,9 @@ omit = ["*/migrations/*", "*/__init__.py"]
 show_missing = true
 skip_covered = false
 fail_under = 70
+
+[dependency-groups]
+dev = [
+    "freezegun>=1.5.5",
+    "time-machine>=3.5.1",
+]

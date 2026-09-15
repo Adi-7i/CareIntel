@@ -9,12 +9,16 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
+from careintel.api.v1.auth.router import router as auth_router
+from careintel.api.v1.consent.router import router as consent_router
 from careintel.api.v1.health.router import router as health_router
 
 router = APIRouter(prefix="/api/v1")
 
 # ── Feature sub-routers ──────────────────────────────────────────────────────
 router.include_router(health_router)
+router.include_router(auth_router)
+router.include_router(consent_router)
 
 # Future routers added here, e.g.:
 # router.include_router(documents_router)

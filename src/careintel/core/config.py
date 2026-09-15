@@ -105,6 +105,28 @@ class Settings(BaseSettings):
         description="HMAC secret key. Must be long and random in production.",
     )
 
+    # ── JWT Authentication ───────────────────────────────────────────────────
+    jwt_secret_key: SecretStr = Field(
+        ...,
+        description="Secret key specifically for JWT signing. Must be secure and random.",
+    )
+    jwt_algorithm: str = Field(
+        default="HS256",
+        description="JWT signing algorithm (e.g., HS256, RS256).",
+    )
+    jwt_access_token_ttl_minutes: Annotated[int, Field(ge=1, le=1440)] = Field(
+        default=30,
+        description="Access token time-to-live in minutes (max 24h).",
+    )
+    jwt_issuer: str = Field(
+        default="careintel",
+        description="The 'iss' claim in the JWT identifying the token issuer.",
+    )
+    jwt_audience: str = Field(
+        default="careintel-api",
+        description="The 'aud' claim in the JWT identifying intended recipients.",
+    )
+
     # ── CORS ─────────────────────────────────────────────────────────────────
     cors_allowed_origins: list[str] = Field(
         default_factory=list,

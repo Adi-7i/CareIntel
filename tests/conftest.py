@@ -32,6 +32,7 @@ os.environ.setdefault(
     "DATABASE_URL", "postgresql+asyncpg://test:test@localhost:5432/careintel_test"
 )
 os.environ.setdefault("SECRET_KEY", "test-secret-key-not-for-production-use-at-all")
+os.environ.setdefault("JWT_SECRET_KEY", "test-jwt-secret-key-not-for-production")
 
 
 @pytest.fixture(autouse=True)

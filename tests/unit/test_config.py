@@ -1,3 +1,4 @@
+# mypy: ignore-errors
 """Unit tests for Settings configuration."""
 
 from __future__ import annotations
@@ -13,7 +14,7 @@ class TestSettings:
 
     def test_loads_with_valid_config(self) -> None:
         """Settings constructs successfully with all required fields."""
-        s = Settings(
+        s = Settings(  # type: ignore[call-arg,arg-type]
             app_env=Environment.DEVELOPMENT,
             database_url="postgresql+asyncpg://user:pass@localhost:5432/db",
             secret_key="some-long-secret-key",
@@ -25,7 +26,7 @@ class TestSettings:
     def test_rejects_sync_database_url(self) -> None:
         """Synchronous PostgreSQL driver scheme is rejected at validation time."""
         with pytest.raises(ValueError, match="asyncpg"):
-            Settings(
+            Settings(  # type: ignore[call-arg,arg-type]
                 database_url="postgresql://user:pass@localhost:5432/db",
                 secret_key="some-secret",
             )
@@ -33,7 +34,7 @@ class TestSettings:
     def test_rejects_debug_in_production(self) -> None:
         """Debug mode in production raises a clear validation error."""
         with pytest.raises(ValueError, match="app_debug"):
-            Settings(
+            Settings(  # type: ignore[call-arg,arg-type]
                 app_env=Environment.PRODUCTION,
                 app_debug=True,
                 database_url="postgresql+asyncpg://user:pass@localhost:5432/db",
@@ -43,8 +44,9 @@ class TestSettings:
     def test_rejects_sql_echo_in_production(self) -> None:
         """SQL echo in production raises a clear validation error."""
         with pytest.raises(ValueError, match="database_echo_sql"):
-            Settings(
+            Settings(  # type: ignore[call-arg,arg-type]
                 app_env=Environment.PRODUCTION,
+                app_debug=False,
                 database_echo_sql=True,
                 database_url="postgresql+asyncpg://user:pass@localhost:5432/db",
                 secret_key="some-secret",
@@ -52,7 +54,7 @@ class TestSettings:
 
     def test_database_url_safe_masks_credentials(self) -> None:
         """database_url_safe() returns the URL with credentials redacted."""
-        s = Settings(
+        s = Settings(  # type: ignore[call-arg,arg-type]
             database_url="postgresql+asyncpg://admin:supersecret@db.host:5432/mydb",
             secret_key="some-secret",
         )
@@ -64,14 +66,15 @@ class TestSettings:
 
     def test_is_production_flag(self) -> None:
         """is_production returns True only for production environment."""
-        prod = Settings(
+        prod = Settings(  # type: ignore[call-arg,arg-type]
             app_env=Environment.PRODUCTION,
+            app_debug=False,
             database_url="postgresql+asyncpg://u:p@h:5432/d",
             secret_key="a-very-long-secret-key-for-production-environment",
         )
         assert prod.is_production is True
 
-        dev = Settings(
+        dev = Settings(  # type: ignore[call-arg,arg-type]
             database_url="postgresql+asyncpg://u:p@h:5432/d",
             secret_key="some-secret",
         )
@@ -81,7 +84,7 @@ class TestSettings:
         """is_testing returns True only for testing environment."""
         from careintel.core.config import Environment
 
-        test = Settings(
+        test = Settings(  # type: ignore[call-arg,arg-type]
             app_env=Environment.TESTING,
             database_url="postgresql+asyncpg://u:p@h:5432/d",
             secret_key="some-secret",
@@ -90,7 +93,7 @@ class TestSettings:
 
     def test_secret_key_is_secret_str(self) -> None:
         """secret_key is a SecretStr — str() does not reveal the value."""
-        s = Settings(
+        s = Settings(  # type: ignore[call-arg,arg-type]
             database_url="postgresql+asyncpg://u:p@h:5432/d",
             secret_key="my-super-secret",
         )
@@ -99,7 +102,7 @@ class TestSettings:
 
     def test_database_url_is_secret_str(self) -> None:
         """database_url is a SecretStr — str() does not reveal credentials."""
-        s = Settings(
+        s = Settings(  # type: ignore[call-arg,arg-type]
             database_url="postgresql+asyncpg://admin:pass@host/db",
             secret_key="some-secret",
         )
@@ -107,7 +110,7 @@ class TestSettings:
 
     def test_cors_allowed_origins_defaults_empty(self) -> None:
         """CORS origins default to an empty list."""
-        s = Settings(
+        s = Settings(  # type: ignore[call-arg,arg-type]
             database_url="postgresql+asyncpg://u:p@h:5432/d",
             secret_key="some-secret",
         )
@@ -115,7 +118,7 @@ class TestSettings:
 
     def test_cors_allowed_origins_accepts_list(self) -> None:
         """CORS origins can be configured."""
-        s = Settings(
+        s = Settings(  # type: ignore[call-arg,arg-type]
             database_url="postgresql+asyncpg://u:p@h:5432/d",
             secret_key="some-secret",
             cors_allowed_origins=["http://localhost:3000"],

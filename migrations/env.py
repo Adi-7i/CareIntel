@@ -30,7 +30,9 @@ from sqlalchemy.ext.asyncio import create_async_engine
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 # Import settings to get the database URL
+import careintel.persistence.models  # noqa: F401 - registers models with Base.metadata
 from careintel.core.config import get_settings
+from careintel.persistence.base import Base
 
 # Alembic Config object — gives access to alembic.ini values
 config = context.config
@@ -41,10 +43,8 @@ if config.config_file_name is not None:
 
 # ──────────────────────────────────────────────────────────────────────────────
 # target_metadata: used by --autogenerate to detect schema changes.
-# Import your DeclarativeBase.metadata here once ORM models exist (Step 2+).
 # ──────────────────────────────────────────────────────────────────────────────
-# from careintel.persistence.models import Base  # uncomment in Step 2
-target_metadata = None
+target_metadata = Base.metadata
 
 
 def get_database_url() -> str:

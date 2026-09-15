@@ -82,6 +82,38 @@ class ValidationError(CareIntelError):
     message = "The request could not be processed due to a validation error."
 
 
+class AuthError(CareIntelError):
+    """Authentication failed (invalid credentials, invalid/expired token)."""
+
+    code = "UNAUTHORIZED"
+    http_status = 401
+    message = "Authentication is required to access this resource."
+
+
+class AuthorizationError(CareIntelError):
+    """Authenticated user lacks permission (RBAC / Object-level)."""
+
+    code = "AUTHORIZATION_DENIED"
+    http_status = 403
+    message = "You do not have permission to perform this action."
+
+
+class ConsentError(CareIntelError):
+    """Required consent is missing, withdrawn, or stale."""
+
+    code = "CONSENT_REQUIRED"
+    http_status = 403
+    message = "Active consent is required to perform this action."
+
+
+class AuditError(CareIntelError):
+    """A critical audit record could not be written."""
+
+    code = "AUDIT_FAILURE"
+    http_status = 500
+    message = "The action was aborted due to a security audit failure."
+
+
 class ServiceUnavailableError(CareIntelError):
     """Downstream dependency (e.g. database) is temporarily unavailable."""
 
