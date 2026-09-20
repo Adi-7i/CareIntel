@@ -35,6 +35,8 @@ class UserORM(Base, TimestampMixin):
     roles: Mapped[list[RoleORM]] = relationship(
         "RoleORM",
         secondary="user_roles",
+        primaryjoin="UserORM.id == UserRoleORM.user_id",
+        secondaryjoin="RoleORM.id == UserRoleORM.role_id",
         lazy="raise",  # explicit loading required
     )
 

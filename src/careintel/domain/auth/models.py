@@ -4,8 +4,8 @@ Auth domain models.
 
 from __future__ import annotations
 
-import uuid
 import datetime
+import uuid
 from dataclasses import dataclass, field
 
 

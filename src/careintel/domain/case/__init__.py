@@ -1,0 +1,3 @@
+"""
+Case aggregate domain.
+"""

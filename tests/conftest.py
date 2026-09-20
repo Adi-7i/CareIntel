@@ -64,7 +64,7 @@ def mock_engine() -> MagicMock:
 @pytest.fixture
 def mock_session_factory(mock_engine: MagicMock) -> MagicMock:
     """Return a mocked session factory."""
-    return MagicMock()
+    return MagicMock(return_value=AsyncMock())
 
 
 @pytest.fixture

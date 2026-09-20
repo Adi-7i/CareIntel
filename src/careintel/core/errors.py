@@ -74,6 +74,21 @@ class ConflictError(CareIntelError):
     message = "A conflict occurred with the current state of the resource."
 
 
+class ConcurrencyError(ConflictError):
+    """Optimistic concurrency lock conflict."""
+
+    code = "OPTIMISTIC_LOCK_CONFLICT"
+    message = "The resource has been modified by another request. Please reload and try again."
+
+
+class InvalidTransitionError(CareIntelError):
+    """Invalid state machine transition."""
+
+    code = "INVALID_STATE_TRANSITION"
+    http_status = 422
+    message = "The requested state transition is not allowed from the current state."
+
+
 class ValidationError(CareIntelError):
     """Domain-level validation failure (distinct from Pydantic request validation)."""
 

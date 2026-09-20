@@ -5,6 +5,7 @@ Consent unit tests.
 from __future__ import annotations
 
 import uuid
+
 import pytest
 
 from careintel.core.errors import ConsentError

@@ -27,9 +27,7 @@ class UserRepository:
         """Get user by ID, eager loading roles and their permissions."""
         stmt = (
             select(UserORM)
-            .options(
-                selectinload(UserORM.roles).selectinload(RoleORM.permissions)
-            )
+            .options(selectinload(UserORM.roles).selectinload(RoleORM.permissions))
             .where(UserORM.id == user_id)
         )
         result = await self.session.execute(stmt)

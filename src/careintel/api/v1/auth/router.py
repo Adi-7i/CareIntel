@@ -7,8 +7,8 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, status
 
 from careintel.api.deps import CurrentUserDep, RawTokenDep, get_auth_service
-from careintel.application.auth.auth_service import AuthService
 from careintel.api.v1.auth.schemas import LoginRequest, TokenResponse, UserProfileResponse
+from careintel.application.auth.auth_service import AuthService
 from careintel.core.correlation import get_correlation_id
 
 router = APIRouter(prefix="/auth", tags=["auth"])

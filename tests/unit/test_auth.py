@@ -5,12 +5,13 @@ Auth and security unit tests.
 from __future__ import annotations
 
 import uuid
+
 import pytest
 
 from careintel.application.auth.password_hasher import PasswordHasher
 from careintel.domain.auth.models import UserContext
-from careintel.domain.auth.policy import AuthorizationPolicy
 from careintel.domain.auth.permissions import Permission
+from careintel.domain.auth.policy import AuthorizationPolicy
 
 
 @pytest.mark.unit
@@ -18,7 +19,7 @@ def test_password_hasher() -> None:
     hasher = PasswordHasher()
     password = "SuperSecretPassword123"
     hashed = hasher.hash(password)
-    
+
     assert hashed != password
     assert hasher.verify(password, hashed) is True
     assert hasher.verify("wrongpassword", hashed) is False
@@ -69,14 +70,10 @@ def test_authorization_policy_facility_scope_system_admin() -> None:
         is_active=True,
         roles={"admin"},
         permissions={Permission.CASE_READ.value},
-        role_facilities={"admin": None}  # System-wide
+        role_facilities={"admin": None},  # System-wide
     )
     facility_id = uuid.uuid4()
-    granted = AuthorizationPolicy.evaluate(
-        user, 
-        Permission.CASE_READ, 
-        facility_scope=facility_id
-    )
+    granted = AuthorizationPolicy.evaluate(user, Permission.CASE_READ, facility_scope=facility_id)
     assert granted is True
 
 
@@ -84,19 +81,17 @@ def test_authorization_policy_facility_scope_system_admin() -> None:
 def test_authorization_policy_facility_scope_mismatch() -> None:
     assigned_facility = uuid.uuid4()
     other_facility = uuid.uuid4()
-    
+
     user = UserContext(
         id=uuid.uuid4(),
         is_active=True,
         roles={"doctor"},
         permissions={Permission.CASE_READ.value},
-        role_facilities={"doctor": assigned_facility}
+        role_facilities={"doctor": assigned_facility},
     )
-    
+
     # Should deny access to other facility
     granted = AuthorizationPolicy.evaluate(
-        user, 
-        Permission.CASE_READ, 
-        facility_scope=other_facility
+        user, Permission.CASE_READ, facility_scope=other_facility
     )
     assert granted is False

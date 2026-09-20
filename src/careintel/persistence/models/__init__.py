@@ -6,6 +6,12 @@ This ensures Alembic's autogenerate feature detects all tables.
 """
 
 from careintel.persistence.models.audit import AuditLogORM
+from careintel.persistence.models.case import (
+    CaseORM,
+    CaseOutboxORM,
+    CaseStateHistoryORM,
+    EncounterORM,
+)
 from careintel.persistence.models.consent import ConsentEventORM, ConsentORM
 from careintel.persistence.models.session import TokenSessionORM
 from careintel.persistence.models.user import (
@@ -18,8 +24,12 @@ from careintel.persistence.models.user import (
 
 __all__ = [
     "AuditLogORM",
+    "CaseORM",
+    "CaseOutboxORM",
+    "CaseStateHistoryORM",
     "ConsentEventORM",
     "ConsentORM",
+    "EncounterORM",
     "PermissionORM",
     "RoleORM",
     "RolePermissionORM",
