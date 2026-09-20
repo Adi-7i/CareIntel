@@ -170,6 +170,44 @@ class Settings(BaseSettings):
         description="If True, evidence cannot become READY until scanned and CLEAN.",
     )
 
+    # ── Processing & Providers ───────────────────────────────────────────────
+    ocr_provider: str = Field(
+        default="demo",
+        description="OCR provider: demo, paddle, azure_doc_intelligence",
+    )
+    ocr_temp_workspace: str = Field(
+        default="/tmp/careintel_ocr",  # noqa: S108
+        description="Temporary workspace for OCR operations.",
+    )
+
+    stt_provider: str = Field(
+        default="demo",
+        description="STT provider: demo, azure_speech, whisper",
+    )
+
+    language_detection_provider: str = Field(
+        default="demo",
+        description="Language detection provider: demo, langdetect",
+    )
+
+    translation_provider: str = Field(
+        default="demo",
+        description="Translation provider: demo, azure_translate, deepl",
+    )
+    translation_api_key: SecretStr | None = Field(
+        default=None,
+        description="API key for translation provider if required.",
+    )
+    translation_endpoint: str | None = Field(
+        default=None,
+        description="Endpoint for translation provider if required.",
+    )
+
+    extraction_provider: str = Field(
+        default="demo",
+        description="Extraction provider: demo, gpt",
+    )
+
     # ── Validators ───────────────────────────────────────────────────────────
     @field_validator("database_url", mode="before")
     @classmethod

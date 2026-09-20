@@ -23,3 +23,7 @@ class Permission(StrEnum):
     # Evidence
     EVIDENCE_READ = "evidence:read"
     EVIDENCE_WRITE = "evidence:write"
+
+    # Processing
+    PROCESSING_READ = "processing:read"
+    PROCESSING_WRITE = "processing:write"

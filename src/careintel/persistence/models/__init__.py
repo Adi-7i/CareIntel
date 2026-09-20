@@ -19,6 +19,17 @@ from careintel.persistence.models.evidence import (
     EvidenceStateHistoryORM,
     TextContentORM,
 )
+from careintel.persistence.models.processing import (
+    ExtractedCandidateORM,
+    ExtractionRunORM,
+    LanguageResultORM,
+    OcrPageORM,
+    OcrRegionORM,
+    OcrTableCandidateORM,
+    ProcessingRunORM,
+    TranscriptRunORM,
+    TranscriptSegmentORM,
+)
 from careintel.persistence.models.session import TokenSessionORM
 from careintel.persistence.models.user import (
     PermissionORM,
@@ -39,11 +50,21 @@ __all__ = [
     "EvidenceORM",
     "EvidenceOutboxORM",
     "EvidenceStateHistoryORM",
+    "ExtractedCandidateORM",
+    "ExtractionRunORM",
+    "LanguageResultORM",
+    "OcrPageORM",
+    "OcrRegionORM",
+    "OcrTableCandidateORM",
     "PermissionORM",
+    # Processing
+    "ProcessingRunORM",
     "RoleORM",
     "RolePermissionORM",
     "TextContentORM",
     "TokenSessionORM",
+    "TranscriptRunORM",
+    "TranscriptSegmentORM",
     "UserORM",
     "UserRoleORM",
 ]

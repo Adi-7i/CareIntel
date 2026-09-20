@@ -24,9 +24,14 @@ from careintel.core.correlation import CorrelationIDMiddleware
 from careintel.core.database import build_engine, build_session_factory, dispose_engine
 from careintel.core.errors import register_exception_handlers
 from careintel.core.logging import configure_logging, get_logger
+from careintel.infrastructure.extraction.demo_provider import DemoExtractionProvider
+from careintel.infrastructure.language.demo_provider import DemoLanguageProvider
+from careintel.infrastructure.ocr.demo_provider import DemoOcrProvider
 from careintel.infrastructure.scanner.noop_scanner import NoOpScanner
 from careintel.infrastructure.storage.azure_provider import AzureBlobProvider
 from careintel.infrastructure.storage.fake_provider import FakeBlobProvider
+from careintel.infrastructure.stt.demo_provider import DemoSpeechProvider
+from careintel.infrastructure.translation.demo_provider import DemoTranslationProvider
 
 
 def create_app() -> FastAPI:
@@ -70,6 +75,13 @@ def create_app() -> FastAPI:
 
         # Initialize Scanner
         _app.state.content_scanner = NoOpScanner()
+
+        # Initialize Phase 5 Providers
+        _app.state.ocr_provider = DemoOcrProvider()
+        _app.state.speech_provider = DemoSpeechProvider()
+        _app.state.language_provider = DemoLanguageProvider()
+        _app.state.translation_provider = DemoTranslationProvider()
+        _app.state.extraction_provider = DemoExtractionProvider()
 
         logger.info("CareIntel startup complete — ready to serve traffic")
         yield

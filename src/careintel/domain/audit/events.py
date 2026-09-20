@@ -37,3 +37,12 @@ class AuditEventType(StrEnum):
     EVIDENCE_VALIDATION_FAILED = "evidence_validation_failed"
     EVIDENCE_STORAGE_FAILURE = "evidence_storage_failure"
     EVIDENCE_CONSENT_DENIED = "evidence_consent_denied"
+
+    # Processing (Phase 5)
+    PROCESSING_REQUESTED = "processing_requested"
+    PROCESSING_STARTED = "processing_started"
+    PROCESSING_COMPLETED = "processing_completed"
+    PROCESSING_FAILED = "processing_failed"
+    PROCESSING_AUTH_DENIED = "processing_auth_denied"
+    PROCESSING_CONSENT_DENIED = "processing_consent_denied"
+    PROCESSING_DUPLICATE_SKIPPED = "processing_duplicate_skipped"

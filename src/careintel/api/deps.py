@@ -27,12 +27,21 @@ from careintel.application.auth.token_service import JWTService
 from careintel.application.case.case_service import CaseService
 from careintel.application.evidence.evidence_service import EvidenceService
 from careintel.application.evidence.file_validator import FileValidator
+from careintel.application.processing.document_processor import DocumentProcessor
+from careintel.application.processing.extraction_processor import ExtractionProcessor
+from careintel.application.processing.language_processor import LanguageProcessor
+from careintel.application.processing.processing_service import ProcessingService
+from careintel.application.processing.speech_processor import SpeechProcessor
 from careintel.core.config import Settings, get_settings
 from careintel.core.database import get_async_session
 from careintel.domain.auth.models import UserContext
 from careintel.domain.auth.permissions import Permission
+from careintel.infrastructure.language.port import LanguageProvider
+from careintel.infrastructure.ocr.port import OcrProvider
 from careintel.infrastructure.scanner.port import ContentScannerPort
 from careintel.infrastructure.storage.port import BlobStoragePort
+from careintel.infrastructure.stt.port import SpeechProvider
+from careintel.infrastructure.translation.port import TranslationProvider
 from careintel.persistence.repositories.audit_repo import AuditRepository
 from careintel.persistence.repositories.case_history_repo import CaseHistoryRepository
 from careintel.persistence.repositories.case_outbox_repo import CaseOutboxRepository
@@ -40,6 +49,7 @@ from careintel.persistence.repositories.case_repo import CaseRepository
 from careintel.persistence.repositories.evidence_history_repo import EvidenceHistoryRepository
 from careintel.persistence.repositories.evidence_outbox_repo import EvidenceOutboxRepository
 from careintel.persistence.repositories.evidence_repo import EvidenceRepository
+from careintel.persistence.repositories.processing_repo import ProcessingRepository
 from careintel.persistence.repositories.session_repo import SessionRepository
 from careintel.persistence.repositories.text_content_repo import TextContentRepository
 from careintel.persistence.repositories.user_repo import UserRepository
@@ -196,4 +206,80 @@ def get_evidence_service(
             max_size_bytes=settings.evidence_max_file_size_bytes,
         ),
         sas_ttl_minutes=settings.evidence_sas_ttl_minutes,
+    )
+
+
+# ── Processing Services ────────────────────────────────────────────────────────
+
+
+def get_ocr_provider(request: Request) -> OcrProvider:
+    return cast(OcrProvider, request.app.state.ocr_provider)
+
+
+def get_speech_provider(request: Request) -> SpeechProvider:
+    return cast(SpeechProvider, request.app.state.speech_provider)
+
+
+def get_language_provider(request: Request) -> LanguageProvider:
+    return cast(LanguageProvider, request.app.state.language_provider)
+
+
+def get_translation_provider(request: Request) -> TranslationProvider:
+    return cast(TranslationProvider, request.app.state.translation_provider)
+
+
+def get_processing_service(
+    request: Request,
+    session: DbSessionDep,
+    settings: SettingsDep,
+    blob_provider: Annotated[BlobStoragePort, Depends(get_blob_provider)],
+    ocr_provider: Annotated[OcrProvider, Depends(get_ocr_provider)],
+    speech_provider: Annotated[SpeechProvider, Depends(get_speech_provider)],
+    language_provider: Annotated[LanguageProvider, Depends(get_language_provider)],
+    translation_provider: Annotated[TranslationProvider, Depends(get_translation_provider)],
+) -> ProcessingService:
+    evidence_repo = EvidenceRepository(session)
+    processing_repo = ProcessingRepository(session)
+    outbox_repo = EvidenceOutboxRepository(session)
+
+    doc_processor = DocumentProcessor(
+        settings=settings,
+        evidence_repo=evidence_repo,
+        processing_repo=processing_repo,
+        outbox_repo=outbox_repo,
+        blob_storage=blob_provider,
+        ocr_provider=ocr_provider,
+    )
+
+    speech_processor = SpeechProcessor(
+        settings=settings,
+        evidence_repo=evidence_repo,
+        processing_repo=processing_repo,
+        outbox_repo=outbox_repo,
+        blob_storage=blob_provider,
+        speech_provider=speech_provider,
+    )
+
+    lang_processor = LanguageProcessor(
+        settings=settings,
+        evidence_repo=evidence_repo,
+        processing_repo=processing_repo,
+        outbox_repo=outbox_repo,
+        language_provider=language_provider,
+        translation_provider=translation_provider,
+    )
+
+    ext_processor = ExtractionProcessor(
+        settings=settings,
+        evidence_repo=evidence_repo,
+        processing_repo=processing_repo,
+        outbox_repo=outbox_repo,
+        extraction_provider=request.app.state.extraction_provider,  # or get_extraction_provider
+    )
+
+    return ProcessingService(
+        document_processor=doc_processor,
+        speech_processor=speech_processor,
+        language_processor=lang_processor,
+        extraction_processor=ext_processor,
     )
