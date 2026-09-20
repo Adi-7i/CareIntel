@@ -14,7 +14,7 @@ Rules:
 from __future__ import annotations
 
 from collections.abc import AsyncGenerator
-from typing import Annotated, Any
+from typing import Annotated, Any, cast
 
 from fastapi import Depends, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -24,12 +24,24 @@ from careintel.application.auth.auth_service import AuthService
 from careintel.application.auth.password_hasher import PasswordHasher
 from careintel.application.auth.permission_service import PermissionService
 from careintel.application.auth.token_service import JWTService
+from careintel.application.case.case_service import CaseService
+from careintel.application.evidence.evidence_service import EvidenceService
+from careintel.application.evidence.file_validator import FileValidator
 from careintel.core.config import Settings, get_settings
 from careintel.core.database import get_async_session
 from careintel.domain.auth.models import UserContext
 from careintel.domain.auth.permissions import Permission
+from careintel.infrastructure.scanner.port import ContentScannerPort
+from careintel.infrastructure.storage.port import BlobStoragePort
 from careintel.persistence.repositories.audit_repo import AuditRepository
+from careintel.persistence.repositories.case_history_repo import CaseHistoryRepository
+from careintel.persistence.repositories.case_outbox_repo import CaseOutboxRepository
+from careintel.persistence.repositories.case_repo import CaseRepository
+from careintel.persistence.repositories.evidence_history_repo import EvidenceHistoryRepository
+from careintel.persistence.repositories.evidence_outbox_repo import EvidenceOutboxRepository
+from careintel.persistence.repositories.evidence_repo import EvidenceRepository
 from careintel.persistence.repositories.session_repo import SessionRepository
+from careintel.persistence.repositories.text_content_repo import TextContentRepository
 from careintel.persistence.repositories.user_repo import UserRepository
 
 # Using FastAPI's built-in HTTPBearer for token extraction (swagger integration)
@@ -135,3 +147,53 @@ def require_permission(permission: Permission | str) -> Any:
         PermissionService.check(actor=user, action=permission)
 
     return Depends(_require_permission)
+
+
+# ── Case & Evidence Services ──────────────────────────────────────────────────
+
+
+def get_case_service(
+    session: DbSessionDep,
+) -> CaseService:
+    return CaseService(
+        case_repo=CaseRepository(session),
+        history_repo=CaseHistoryRepository(session),
+        outbox_repo=CaseOutboxRepository(session),
+        audit_repo=AuditRepository(session),
+    )
+
+
+def get_blob_provider(request: Request) -> BlobStoragePort:
+    """Get the blob storage provider initialized in app lifespan."""
+    return cast(BlobStoragePort, request.app.state.blob_provider)
+
+
+def get_content_scanner(request: Request) -> ContentScannerPort:
+    """Get the content scanner initialized in app lifespan."""
+    return cast(ContentScannerPort, request.app.state.content_scanner)
+
+
+def get_evidence_service(
+    session: DbSessionDep,
+    settings: SettingsDep,
+    case_service: Annotated[CaseService, Depends(get_case_service)],
+    blob_provider: Annotated[BlobStoragePort, Depends(get_blob_provider)],
+    scanner: Annotated[ContentScannerPort, Depends(get_content_scanner)],
+) -> EvidenceService:
+    """Construct EvidenceService with all required repositories."""
+    return EvidenceService(
+        case_repo=CaseRepository(session),
+        evidence_repo=EvidenceRepository(session),
+        text_repo=TextContentRepository(session),
+        history_repo=EvidenceHistoryRepository(session),
+        outbox_repo=EvidenceOutboxRepository(session),
+        audit_repo=AuditRepository(session),
+        case_service=case_service,
+        blob_provider=blob_provider,
+        scanner=scanner,
+        file_validator=FileValidator(
+            allowed_extensions=settings.evidence_allowed_extensions,
+            max_size_bytes=settings.evidence_max_file_size_bytes,
+        ),
+        sas_ttl_minutes=settings.evidence_sas_ttl_minutes,
+    )

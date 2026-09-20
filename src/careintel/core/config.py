@@ -133,6 +133,43 @@ class Settings(BaseSettings):
         description="List of permitted CORS origins.",
     )
 
+    # ── Evidence & Storage ───────────────────────────────────────────────────
+    azure_storage_connection_string: SecretStr | None = Field(
+        default=None,
+        description="Azure Blob Storage connection string. If None, uses FakeBlobProvider.",
+    )
+    azure_storage_container: str = Field(
+        default="careintel-evidence",
+        description="Azure Blob Storage private container name.",
+    )
+    evidence_max_file_size_bytes: int = Field(
+        default=52428800,
+        description="Max upload file size in bytes (default 50MB).",
+    )
+    evidence_allowed_extensions: list[str] = Field(
+        default_factory=lambda: [
+            ".pdf",
+            ".docx",
+            ".txt",
+            ".jpg",
+            ".jpeg",
+            ".png",
+            ".mp3",
+            ".wav",
+            ".m4a",
+            ".ogg",
+        ],
+        description="Allowed file extensions for upload.",
+    )
+    evidence_sas_ttl_minutes: int = Field(
+        default=15,
+        description="TTL in minutes for generated SAS download URLs.",
+    )
+    evidence_require_scan_before_ready: bool = Field(
+        default=True,
+        description="If True, evidence cannot become READY until scanned and CLEAN.",
+    )
+
     # ── Validators ───────────────────────────────────────────────────────────
     @field_validator("database_url", mode="before")
     @classmethod

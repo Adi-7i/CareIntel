@@ -1,0 +1,3 @@
+"""
+Blob storage provider abstractions.
+"""

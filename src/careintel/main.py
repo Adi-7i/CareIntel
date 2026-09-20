@@ -24,6 +24,9 @@ from careintel.core.correlation import CorrelationIDMiddleware
 from careintel.core.database import build_engine, build_session_factory, dispose_engine
 from careintel.core.errors import register_exception_handlers
 from careintel.core.logging import configure_logging, get_logger
+from careintel.infrastructure.scanner.noop_scanner import NoOpScanner
+from careintel.infrastructure.storage.azure_provider import AzureBlobProvider
+from careintel.infrastructure.storage.fake_provider import FakeBlobProvider
 
 
 def create_app() -> FastAPI:
@@ -55,6 +58,18 @@ def create_app() -> FastAPI:
         session_factory = build_session_factory(engine)
         _app.state.db_engine = engine
         _app.state.db_session_factory = session_factory
+
+        # Initialize Storage Provider
+        if settings.azure_storage_connection_string:
+            _app.state.blob_provider = AzureBlobProvider(
+                connection_string=settings.azure_storage_connection_string.get_secret_value(),
+                container_name=settings.azure_storage_container,
+            )
+        else:
+            _app.state.blob_provider = FakeBlobProvider()
+
+        # Initialize Scanner
+        _app.state.content_scanner = NoOpScanner()
 
         logger.info("CareIntel startup complete — ready to serve traffic")
         yield

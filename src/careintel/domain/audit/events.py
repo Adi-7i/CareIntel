@@ -24,3 +24,16 @@ class AuditEventType(StrEnum):
     CASE_AUTH_DENIED = "case_auth_denied"
     CASE_CONCURRENCY_CONFLICT = "case_concurrency_conflict"
     CASE_CONSENT_DENIED = "case_consent_denied"
+
+    # Evidence
+    EVIDENCE_TEXT_CREATED = "evidence_text_created"
+    EVIDENCE_UPLOAD_STARTED = "evidence_upload_started"
+    EVIDENCE_UPLOAD_ACCEPTED = "evidence_upload_accepted"
+    EVIDENCE_UPLOAD_REJECTED = "evidence_upload_rejected"
+    EVIDENCE_STATE_TRANSITION = "evidence_state_transition"
+    EVIDENCE_DOWNLOAD_AUTHORIZED = "evidence_download_authorized"
+    EVIDENCE_DUPLICATE_DETECTED = "evidence_duplicate_detected"
+    EVIDENCE_AUTH_DENIED = "evidence_auth_denied"
+    EVIDENCE_VALIDATION_FAILED = "evidence_validation_failed"
+    EVIDENCE_STORAGE_FAILURE = "evidence_storage_failure"
+    EVIDENCE_CONSENT_DENIED = "evidence_consent_denied"

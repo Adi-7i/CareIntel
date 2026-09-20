@@ -37,8 +37,7 @@ def test_user() -> UserContext:
 
 @pytest.fixture
 def app_with_mocks(app: FastAPI, mock_case_service: AsyncMock, test_user: UserContext) -> FastAPI:
-    from careintel.api.deps import get_current_user
-    from careintel.api.v1.cases.router import get_case_service
+    from careintel.api.deps import get_case_service, get_current_user
 
     # Mock CurrentUser
     app.dependency_overrides[get_current_user] = lambda: test_user

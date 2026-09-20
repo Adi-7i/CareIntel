@@ -9,7 +9,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, status
 
-from careintel.api.deps import CurrentUserDep, DbSessionDep, require_permission
+from careintel.api.deps import CurrentUserDep, DbSessionDep, get_case_service, require_permission
 from careintel.api.v1.cases.schemas import (
     CaseHistoryResponse,
     CaseResponse,
@@ -24,23 +24,9 @@ from careintel.domain.case.commands import CreateCaseCommand, TransitionCaseComm
 from careintel.domain.consent.models import ConsentContext
 from careintel.domain.consent.policy import ConsentPolicy
 from careintel.domain.consent.purpose import ConsentPurpose
-from careintel.persistence.repositories.audit_repo import AuditRepository
-from careintel.persistence.repositories.case_history_repo import CaseHistoryRepository
-from careintel.persistence.repositories.case_outbox_repo import CaseOutboxRepository
-from careintel.persistence.repositories.case_repo import CaseRepository
 from careintel.persistence.repositories.consent_repo import ConsentRepository
 
 router = APIRouter(prefix="/cases", tags=["cases"])
-
-
-def get_case_service(session: DbSessionDep) -> CaseService:
-    """Dependency provider for CaseService."""
-    return CaseService(
-        case_repo=CaseRepository(session),
-        history_repo=CaseHistoryRepository(session),
-        outbox_repo=CaseOutboxRepository(session),
-        audit_repo=AuditRepository(session),
-    )
 
 
 CaseServiceDep = Annotated[CaseService, Depends(get_case_service)]

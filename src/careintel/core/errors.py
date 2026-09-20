@@ -138,6 +138,52 @@ class ServiceUnavailableError(CareIntelError):
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+# Evidence Exceptions
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+class EvidenceError(CareIntelError):
+    """Base class for Evidence specific errors."""
+
+    code = "EVIDENCE_ERROR"
+    http_status = 422
+    message = "An error occurred while processing the evidence."
+
+
+class FileTooLargeError(EvidenceError):
+    code = "FILE_TOO_LARGE"
+    http_status = 413
+    message = "The uploaded file exceeds the maximum allowed size."
+
+
+class UnsupportedFileTypeError(EvidenceError):
+    code = "UNSUPPORTED_FILE_TYPE"
+    http_status = 415
+    message = "The uploaded file type or extension is not supported."
+
+
+class MimeMismatchError(EvidenceError):
+    code = "MIME_MISMATCH"
+    http_status = 415
+    message = "The file content does not match its declared type."
+
+
+class DuplicateEvidenceError(ConflictError):
+    code = "DUPLICATE_EVIDENCE"
+    message = "This evidence has already been uploaded."
+
+
+class StorageError(ServiceUnavailableError):
+    code = "STORAGE_UNAVAILABLE"
+    message = "The storage provider is temporarily unavailable."
+
+
+class ScannerUnavailableError(ServiceUnavailableError):
+    code = "SCANNER_UNAVAILABLE"
+    message = "The content scanner is temporarily unavailable."
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # Response builders
 # ──────────────────────────────────────────────────────────────────────────────
 

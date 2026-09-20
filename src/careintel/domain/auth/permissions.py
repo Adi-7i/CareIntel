@@ -19,3 +19,7 @@ class Permission(StrEnum):
     # Future Case Management placeholder
     CASE_READ = "case:read"
     CASE_WRITE = "case:write"
+
+    # Evidence
+    EVIDENCE_READ = "evidence:read"
+    EVIDENCE_WRITE = "evidence:write"

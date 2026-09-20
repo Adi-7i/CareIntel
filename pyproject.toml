@@ -24,6 +24,10 @@ dependencies = [
     "passlib>=1.7.4",
     "bcrypt>=5.0.0",
     "email-validator>=2.1.0",
+    # Evidence & Storage
+    "azure-storage-blob>=12.20.0",
+    "python-multipart>=0.0.9",
+    "python-magic>=0.4.27",
 ]
 
 [project.optional-dependencies]

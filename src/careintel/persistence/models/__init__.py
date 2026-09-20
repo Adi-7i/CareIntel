@@ -13,6 +13,12 @@ from careintel.persistence.models.case import (
     EncounterORM,
 )
 from careintel.persistence.models.consent import ConsentEventORM, ConsentORM
+from careintel.persistence.models.evidence import (
+    EvidenceORM,
+    EvidenceOutboxORM,
+    EvidenceStateHistoryORM,
+    TextContentORM,
+)
 from careintel.persistence.models.session import TokenSessionORM
 from careintel.persistence.models.user import (
     PermissionORM,
@@ -30,9 +36,13 @@ __all__ = [
     "ConsentEventORM",
     "ConsentORM",
     "EncounterORM",
+    "EvidenceORM",
+    "EvidenceOutboxORM",
+    "EvidenceStateHistoryORM",
     "PermissionORM",
     "RoleORM",
     "RolePermissionORM",
+    "TextContentORM",
     "TokenSessionORM",
     "UserORM",
     "UserRoleORM",
