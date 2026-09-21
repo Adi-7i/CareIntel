@@ -208,6 +208,15 @@ class Settings(BaseSettings):
         description="Extraction provider: demo, gpt",
     )
 
+    # ── Async Execution & Celery (Phase 8) ────────────
+    celery_broker_url: SecretStr = Field(default=SecretStr("redis://localhost:6379/0"))
+    celery_result_backend: SecretStr | None = Field(default=None)
+    celery_task_default_queue: str = Field(default="careintel_default")
+    celery_worker_prefetch_multiplier: int = Field(default=1)
+    celery_task_soft_time_limit: int = Field(default=300)
+    celery_task_hard_time_limit: int = Field(default=360)
+    celery_stale_task_threshold_seconds: int = Field(default=120)
+
     # ── Structuring ──────────────────────────────────────────────────────────
     structuring_checklist_path: str = Field(
         default="config/checklists/demo_v1.json",

@@ -75,3 +75,12 @@ class AuditEventType(StrEnum):
     AI_AUTH_DENIED = "ai_auth_denied"
     AI_CONSENT_DENIED = "ai_consent_denied"
 
+    # Async Workflow (Phase 8)
+    TASK_QUEUED = "task_queued"
+    TASK_STARTED = "task_started"
+    TASK_SUCCEEDED = "task_succeeded"
+    TASK_FAILED = "task_failed"
+    TASK_RETRYING = "task_retrying"
+    TASK_STALE_RECOVERED = "task_stale_recovered"
+    WORKFLOW_ADVANCE_REQUESTED = "workflow_advance_requested"
+

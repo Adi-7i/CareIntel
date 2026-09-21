@@ -287,9 +287,16 @@ def get_processing_service(
         extraction_provider=request.app.state.extraction_provider,  # or get_extraction_provider
     )
 
+    from careintel.application.workflow.task_service import AsyncTaskService
+    from careintel.persistence.repositories.task_repo import AsyncTaskRepository
+    task_service = AsyncTaskService(AsyncTaskRepository(session))
+
     return ProcessingService(
         document_processor=doc_processor,
         speech_processor=speech_processor,
         language_processor=lang_processor,
         extraction_processor=ext_processor,
+        task_service=task_service,
+        evidence_repo=evidence_repo,
+        outbox_repo=outbox_repo,
     )

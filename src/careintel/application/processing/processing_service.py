@@ -26,45 +26,88 @@ class ProcessingService:
         speech_processor: SpeechProcessor,
         language_processor: LanguageProcessor,
         extraction_processor: ExtractionProcessor,
+        task_service: AsyncTaskService,
+        evidence_repo: EvidenceRepository,
+        outbox_repo: EvidenceOutboxRepository,
     ) -> None:
         self.document_processor = document_processor
         self.speech_processor = speech_processor
         self.language_processor = language_processor
         self.extraction_processor = extraction_processor
+        self.task_service = task_service
+        self.evidence_repo = evidence_repo
+        self.outbox_repo = outbox_repo
         self.logger = logging.getLogger(__name__)
 
     async def trigger_processing(
         self, command: TriggerProcessingCommand, user: UserContext, correlation_id: str
     ) -> uuid.UUID:
         """
-        Triggers the appropriate processing pipeline based on ProcessorType.
-        Returns the ProcessingRun ID.
+        Triggers the appropriate processing pipeline by writing an outbox event
+        and creating a PENDING async task.
+        Returns the async task ID.
         """
         self.logger.info(
-            f"Triggering {command.processor_type} processing for evidence {command.evidence_id}"
+            f"Dispatching {command.processor_type} processing for evidence {command.evidence_id}"
+        )
+        
+        evidence = await self.evidence_repo.get_by_id(command.evidence_id)
+        if not evidence:
+            from careintel.core.errors import NotFoundError
+            raise NotFoundError("Evidence not found")
+
+        # 1. Create outbox event
+        import datetime
+        from ulid import ULID
+        from careintel.persistence.models.evidence import EvidenceOutboxORM
+        
+        now = datetime.datetime.now(datetime.UTC)
+        outbox_event = EvidenceOutboxORM(
+            id=str(ULID()),
+            event_type="EVIDENCE_PROCESSING_REQUESTED",
+            event_version=1,
+            occurred_at=now,
+            producer="careintel.processing_service",
+            correlation_id=correlation_id,
+            evidence_id=command.evidence_id,
+            case_id=evidence.case_id,
+            actor_id=user.id,
+            aggregate_version=evidence.version,
+            payload={
+                "processor_type": command.processor_type,
+                "config_version": command.parameters.get("config_version", "v1"),
+                **command.parameters,
+            },
+        )
+        await self.outbox_repo.append(outbox_event)
+
+        # 2. Create Task payload directly
+        from careintel.domain.workflow.models import AsyncTaskPayload
+        
+        task_name_map = {
+            ProcessorType.DOCUMENT_OCR.value: "careintel.tasks.processing.run_processing",
+            ProcessorType.SPEECH_TRANSCRIPTION.value: "careintel.tasks.processing.run_processing",
+            ProcessorType.LANGUAGE_NORMALIZATION.value: "careintel.tasks.processing.run_processing",
+            ProcessorType.CANDIDATE_EXTRACTION.value: "careintel.tasks.processing.run_processing",
+        }
+        task_name = task_name_map.get(command.processor_type, "careintel.tasks.processing.run_processing")
+
+        payload = AsyncTaskPayload(
+            task_type=task_name,
+            task_version=1,
+            entity_type="evidence",
+            entity_id=command.evidence_id,
+            case_id=evidence.case_id,
+            actor_id=user.id,
+            correlation_id=correlation_id,
+            config=outbox_event.payload,
         )
 
-        if command.processor_type == ProcessorType.DOCUMENT_OCR.value:
-            return await self.document_processor.process(command.evidence_id, user, correlation_id)
+        task = await self.task_service.get_or_create_task(
+            idempotency_key=f"outbox_{outbox_event.id}",
+            payload=payload,
+            causation_id=outbox_event.id,
+        )
+        
+        return task.id
 
-        elif command.processor_type == ProcessorType.SPEECH_TRANSCRIPTION.value:
-            return await self.speech_processor.process(command.evidence_id, user, correlation_id)
-
-        elif command.processor_type == ProcessorType.LANGUAGE_NORMALIZATION.value:
-            # For Language and Extraction, they need input text.
-            # Usually the command payload would provide this or it fetches it from previous run.
-            # In Phase 5, we can assume the caller passes the text in command.parameters
-            text = command.parameters.get("text", "")
-            target_lang = command.parameters.get("target_language", "en")
-            return await self.language_processor.process(
-                command.evidence_id, text, user, correlation_id, target_language=target_lang
-            )
-
-        elif command.processor_type == ProcessorType.CANDIDATE_EXTRACTION.value:
-            text = command.parameters.get("text", "")
-            return await self.extraction_processor.process(
-                command.evidence_id, text, user, correlation_id
-            )
-
-        else:
-            raise CareIntelError(f"Unsupported processor type: {command.processor_type}")

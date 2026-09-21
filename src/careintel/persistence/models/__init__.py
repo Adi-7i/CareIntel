@@ -56,10 +56,12 @@ from careintel.persistence.models.user import (
     UserORM,
     UserRoleORM,
 )
+from careintel.persistence.models.workflow import AsyncTaskORM
 
 __all__ = [
     "AIDraftORM",
     "AIRunORM",
+    "AsyncTaskORM",
     "AuditLogORM",
     "CaseORM",
     "CaseOutboxORM",
