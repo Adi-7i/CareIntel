@@ -15,6 +15,7 @@ from careintel.api.v1.consent.router import router as consent_router
 from careintel.api.v1.evidence.router import router as evidence_router
 from careintel.api.v1.health.router import router as health_router
 from careintel.api.v1.processing.router import router as processing_router
+from careintel.api.v1.structuring.router import router as structuring_router
 
 router = APIRouter(prefix="/api/v1")
 
@@ -25,6 +26,7 @@ router.include_router(consent_router)
 router.include_router(cases_router)
 router.include_router(evidence_router)
 router.include_router(processing_router)
+router.include_router(structuring_router)
 # Future routers added here, e.g.:
 # router.include_router(documents_router)
 # router.include_router(reviews_router)

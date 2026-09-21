@@ -27,3 +27,7 @@ class Permission(StrEnum):
     # Processing
     PROCESSING_READ = "processing:read"
     PROCESSING_WRITE = "processing:write"
+
+    # Structuring
+    STRUCTURING_READ = "structuring:read"
+    STRUCTURING_WRITE = "structuring:write"

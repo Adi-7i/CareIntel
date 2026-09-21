@@ -31,6 +31,15 @@ from careintel.persistence.models.processing import (
     TranscriptSegmentORM,
 )
 from careintel.persistence.models.session import TokenSessionORM
+from careintel.persistence.models.structuring import (
+    ChecklistPolicyVersionORM,
+    ClarificationQuestionORM,
+    ConflictCandidateLinkORM,
+    ConflictRecordORM,
+    MissingInfoItemORM,
+    StructuringRunORM,
+    TimelineEventORM,
+)
 from careintel.persistence.models.user import (
     PermissionORM,
     RoleORM,
@@ -44,6 +53,10 @@ __all__ = [
     "CaseORM",
     "CaseOutboxORM",
     "CaseStateHistoryORM",
+    "ChecklistPolicyVersionORM",
+    "ClarificationQuestionORM",
+    "ConflictCandidateLinkORM",
+    "ConflictRecordORM",
     "ConsentEventORM",
     "ConsentORM",
     "EncounterORM",
@@ -53,15 +66,17 @@ __all__ = [
     "ExtractedCandidateORM",
     "ExtractionRunORM",
     "LanguageResultORM",
+    "MissingInfoItemORM",
     "OcrPageORM",
     "OcrRegionORM",
     "OcrTableCandidateORM",
     "PermissionORM",
-    # Processing
     "ProcessingRunORM",
     "RoleORM",
     "RolePermissionORM",
+    "StructuringRunORM",
     "TextContentORM",
+    "TimelineEventORM",
     "TokenSessionORM",
     "TranscriptRunORM",
     "TranscriptSegmentORM",

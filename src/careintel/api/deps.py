@@ -91,6 +91,16 @@ DbSessionDep = Annotated[AsyncSession, Depends(_db_session_provider)]
 # ── Authentication & Authorization ─────────────────────────────────────────────
 
 
+from careintel.application.auth.consent_service import ConsentService
+from careintel.persistence.repositories.consent_repo import ConsentRepository
+
+def get_consent_service(session: DbSessionDep) -> ConsentService:
+    return ConsentService(
+        consent_repo=ConsentRepository(session),
+        audit_repo=AuditRepository(session),
+    )
+
+
 def get_auth_service(
     session: DbSessionDep,
     settings: SettingsDep,

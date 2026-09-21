@@ -208,6 +208,24 @@ class Settings(BaseSettings):
         description="Extraction provider: demo, gpt",
     )
 
+    # ── Structuring ──────────────────────────────────────────────────────────
+    structuring_checklist_path: str = Field(
+        default="config/checklists/demo_v1.json",
+        description="Path to active checklist policy file",
+    )
+    structuring_active_checklist_version: str = Field(
+        default="demo_v1",
+        description="Active checklist version key",
+    )
+    structuring_max_questions_per_round: int = Field(
+        default=5,
+        description="Max clarification questions per round (prototype policy)",
+    )
+    structuring_max_rounds: int = Field(
+        default=2,
+        description="Max clarification rounds (prototype policy)",
+    )
+
     # ── Validators ───────────────────────────────────────────────────────────
     @field_validator("database_url", mode="before")
     @classmethod
