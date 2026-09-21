@@ -39,3 +39,21 @@ class Permission(StrEnum):
     # AI (Phase 7)
     AI_READ = "ai:read"
     AI_WRITE = "ai:write"
+
+    # Review (Phase 9)
+    REVIEW_READ = "review:read"
+    REVIEW_WRITE = "review:write"
+    REVIEW_ASSIGN = "review:assign"
+
+    # Escalation (Phase 9)
+    ESCALATION_READ = "escalation:read"
+    ESCALATION_WRITE = "escalation:write"
+
+    # Referral / Handoff (Phase 9)
+    REFERRAL_READ = "referral:read"
+    REFERRAL_WRITE = "referral:write"
+    HANDOFF_READ = "handoff:read"
+    HANDOFF_WRITE = "handoff:write"
+
+    # Recipient management (Phase 9)
+    RECIPIENT_MANAGE = "recipient:manage"

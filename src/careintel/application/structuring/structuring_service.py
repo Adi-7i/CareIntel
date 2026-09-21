@@ -18,11 +18,7 @@ from careintel.application.structuring.conflict_detector import (
 from careintel.application.structuring.missing_info_evaluator import MissingInfoEvaluator
 from careintel.application.structuring.temporal_normalizer import TemporalNormalizer
 from careintel.core.config import Settings
-from careintel.domain.audit.events import (
-    CASE_STRUCTURED,
-    STRUCTURING_FAILED,
-    TIMELINE_EVALUATED,
-)
+from careintel.domain.audit.events import AuditEventType
 from careintel.domain.auth.models import UserContext
 from careintel.domain.auth.permissions import Permission
 from careintel.domain.auth.policy import AuthorizationPolicy
@@ -177,14 +173,14 @@ class StructuringService:
             self._session.add(
                 EvidenceOutboxORM(
                     id=uuid.uuid4(),
-                    event_type=TIMELINE_EVALUATED,
+                    event_type=AuditEventType.TIMELINE_EVALUATED.value,
                     payload={"case_id": str(case_id), "run_id": str(run_id)},
                 )
             )
             self._session.add(
                 EvidenceOutboxORM(
                     id=uuid.uuid4(),
-                    event_type=CASE_STRUCTURED,
+                    event_type=AuditEventType.CASE_STRUCTURED.value,
                     payload={"case_id": str(case_id), "run_id": str(run_id)},
                 )
             )
@@ -194,7 +190,7 @@ class StructuringService:
                 AuditLogORM(
                     id=uuid.uuid4(),
                     actor_id=user.id,
-                    event_type=CASE_STRUCTURED,
+                    event_type=AuditEventType.CASE_STRUCTURED.value,
                     target_resource=str(case_id),
                     payload={"run_id": str(run_id)},
                 )
@@ -211,7 +207,7 @@ class StructuringService:
                 AuditLogORM(
                     id=uuid.uuid4(),
                     actor_id=user.id,
-                    event_type=STRUCTURING_FAILED,
+                    event_type=AuditEventType.STRUCTURING_FAILED.value,
                     target_resource=str(case_id),
                     payload={"run_id": str(run_id), "error": str(e)},
                 )

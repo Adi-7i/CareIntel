@@ -72,7 +72,6 @@ class ProcessingService:
             evidence_id=command.evidence_id,
             case_id=evidence.case_id,
             actor_id=user.id,
-            aggregate_version=evidence.version,
             payload={
                 "processor_type": command.processor_type,
                 "config_version": command.parameters.get("config_version", "v1"),
