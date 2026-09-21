@@ -1,177 +1,216 @@
-# CareIntel — Backend
+# CareIntel Backend Infrastructure
 
-> Non-diagnostic healthcare information and reviewer-workflow system.  
-> Keeps qualified human review as the authority. Uses synthetic/public sample data only.
+> **Enterprise-Grade Healthcare Information & Reviewer-Workflow System**
+>
+> *A non-diagnostic platform designed to empower qualified human review while strictly utilizing synthetic or public sample data.*
 
 ---
 
-## Quick Start
+## 📑 Table of Contents
+- [System Architecture](#system-architecture)
+- [Technology Stack](#technology-stack)
+- [Execution Methods & Runbooks](#execution-methods--runbooks)
+  - [Prerequisites](#prerequisites)
+  - [Environment Provisioning](#environment-provisioning)
+  - [Database Operations](#database-operations)
+  - [Service Execution](#service-execution)
+- [Code Quality & Testing Verification](#code-quality--testing-verification)
+- [Architecture Principles](#architecture-principles)
+- [Roadmap & Milestone Tracking](#roadmap--milestone-tracking)
+
+---
+
+## 🏛️ System Architecture
+
+CareIntel relies on a deeply layered architecture enforcing strict separation of concerns, decoupling the domain logic from the underlying framework operations.
+
+```mermaid
+graph TD
+    %% Define styles
+    classDef client fill:#3498db,stroke:#2980b9,stroke-width:2px,color:white;
+    classDef api fill:#2ecc71,stroke:#27ae60,stroke-width:2px,color:white;
+    classDef domain fill:#f1c40f,stroke:#f39c12,stroke-width:2px,color:black;
+    classDef db fill:#9b59b6,stroke:#8e44ad,stroke-width:2px,color:white;
+    classDef external fill:#e74c3c,stroke:#c0392b,stroke-width:2px,color:white;
+
+    %% Nodes
+    Client((Client App)):::client
+    Router[FastAPI Router / API Layer]:::api
+    Deps[Dependency Injection / Auth]:::api
+    Domain[Pure Domain Layer]:::domain
+    Core[Core Infrastructure / Config]:::domain
+    PostgreSQL[(PostgreSQL DB)]:::db
+    Celery[Celery / Task Queue]:::external
+    Redis[(Redis Streams)]:::db
+
+    %% Connections
+    Client -->|HTTPS / REST| Router
+    Router --> Deps
+    Deps -->|Validates| Core
+    Router -->|Calls| Domain
+    Domain -->|CRUD via SQLAlchemy| PostgreSQL
+    Domain -->|Async Jobs| Celery
+    Celery -->|State/Msg| Redis
+
+    %% Subgraphs
+    subgraph CareIntel Backend System
+        Router
+        Deps
+        Domain
+        Core
+    end
+```
+
+---
+
+## 💻 Technology Stack
+
+CareIntel leverages modern, high-performance tooling to guarantee reliability, type safety, and scalability.
+
+| Domain | Technology | Description |
+| :--- | :--- | :--- |
+| **Language** | Python 3.12+ | Strongly typed, modern Python standards |
+| **Package Manager** | [uv](https://docs.astral.sh/uv/) | Extremely fast Python package installer and resolver |
+| **Framework** | FastAPI | High-performance async web framework |
+| **Database** | PostgreSQL | Enterprise-grade relational database |
+| **ORM & Migrations** | SQLAlchemy 2.0 & Alembic | Async persistence and schema versioning |
+| **Task Queue** | Celery & Redis (Planned) | Distributed task orchestration |
+| **Linting & Formatting** | Ruff & Mypy | Strict static analysis and unified linting |
+| **Storage** | Azure Blob Storage | Secure, scalable evidence storage |
+
+---
+
+## ⚙️ Execution Methods & Runbooks
+
+Follow these procedures to bootstrap the environment and start the development server.
 
 ### Prerequisites
 
-- Python 3.12
-- [`uv`](https://docs.astral.sh/uv/) (package manager)
-- PostgreSQL (external instance — see configuration below)
+Ensure the following dependencies are installed on your host system:
+- **Python 3.12**
+- **uv** package manager (`curl -LsSf https://astral.sh/uv/install.sh | sh`)
+- **PostgreSQL** instance (local or remote)
 
-### 1. Install dependencies
+### Environment Provisioning
+
+1. **Synchronize Dependencies:**
+   Install the project with all required development and production packages.
+   ```bash
+   uv sync --all-extras
+   ```
+
+2. **Configure Environment Parameters:**
+   Establish your local `.env` file from the provided template.
+   ```bash
+   cp .env.example .env
+   ```
+   **Crucial Environment Variables:**
+   - `DATABASE_URL`: Standard async Postgres connection string (e.g., `postgresql+asyncpg://user:pass@host:port/dbname`)
+   - `SECRET_KEY`: High-entropy key for cryptographic signing (`openssl rand -hex 32`)
+
+### Database Operations
+
+Schema synchronization and migrations are managed by Alembic. The database connection is dynamically resolved via the `DATABASE_URL` environment parameter.
 
 ```bash
-uv sync --all-extras
-```
-
-### 2. Configure environment
-
-```bash
-cp .env.example .env
-# Edit .env — set DATABASE_URL and SECRET_KEY
-```
-
-Minimum required variables:
-
-| Variable | Description |
-|----------|-------------|
-| `DATABASE_URL` | `postgresql+asyncpg://user:pass@host:port/dbname` |
-| `SECRET_KEY` | Long random string (use `openssl rand -hex 32`) |
-
-### 3. Run database migrations
-
-```bash
+# Apply pending migrations to establish schema
 uv run alembic upgrade head
+
+# Generate a new migration blueprint
+uv run alembic revision --autogenerate -m "descriptive_migration_name"
+
+# Verify current revision state
+uv run alembic current
+
+# Revert the most recent migration step
+uv run alembic downgrade -1
 ```
 
-### 4. Start the development server
+### Service Execution
+
+Launch the API server bound to the local interface.
 
 ```bash
 uv run uvicorn careintel.main:app --reload --host 127.0.0.1 --port 8000
 ```
-
-API docs available at: http://127.0.0.1:8000/api/docs
+> **Telemetry & Documentation:**
+> - API Documentation: [http://127.0.0.1:8000/api/docs](http://127.0.0.1:8000/api/docs)
+> - Liveness Probe: `GET /api/v1/health/live`
+> - Readiness Probe: `GET /api/v1/health/ready`
 
 ---
 
-## Code Quality
+## 🧪 Code Quality & Testing Verification
 
-All commands run from the project root:
+CareIntel maintains rigorous code quality standards. Ensure all checks succeed prior to committing changes. Commands should be executed from the project root.
 
+### Code Style & Type Safety
 ```bash
-# Format (in-place)
+# Format codebase in-place
 uv run ruff format .
 
-# Lint
+# Execute static linting checks
 uv run ruff check .
 
-# Type check
+# Perform strict type analysis
 uv run mypy
+```
 
-# Run all tests (unit + API, no live DB needed)
+### Automated Testing
+
+The testing suite partitions unit, API, and integration constraints to optimize developer velocity.
+
+```bash
+# Execute isolated unit and API tests (No live DB required)
 uv run pytest
 
-# Run with coverage
+# Generate test coverage reports
 uv run pytest --cov
 
-# Run integration tests (requires live DATABASE_URL)
+# Execute full integration suite (Requires live DATABASE_URL)
 uv run pytest tests/integration/ -m integration -v
 ```
 
 ---
 
-## Project Structure
+## 📐 Architecture Principles
 
-```
-src/careintel/
-├── main.py              # Thin composition root (app factory)
-├── core/
-│   ├── config.py        # Typed settings (Pydantic Settings)
-│   ├── database.py      # Async SQLAlchemy engine + session management
-│   ├── logging.py       # Structured JSON logging + sensitive-data filter
-│   ├── correlation.py   # Request/correlation ID middleware
-│   └── errors.py        # Global error contract + exception hierarchy
-├── api/
-│   ├── deps.py          # FastAPI dependency providers
-│   └── v1/
-│       ├── router.py    # v1 route aggregator
-│       └── health/      # /api/v1/health/live + /api/v1/health/ready
-└── domain/              # Pure domain layer (no framework dependencies)
+Our technical decisions prioritize maintainability, security, and traceability:
 
-migrations/              # Alembic migration scripts
-tests/
-├── unit/                # Fast, no external dependencies
-├── api/                 # ASGI-level tests (no live DB)
-└── integration/         # Requires live PostgreSQL
-```
-
----
-
-## Architecture Principles
-
-### Layer Rules (enforced by tests)
-- **Domain** → no FastAPI, SQLAlchemy, or external framework imports
-- **Core** → Pydantic + stdlib only (no FastAPI in config/logging/correlation)
-- **API** → never accesses persistence implementations directly
-- **No LangGraph** — future orchestration uses Celery + Redis Streams
-- **No Docker** — deferred to final hardening phase
-
-### Error Contract
-All API errors return:
-```json
-{
-  "error": {
-    "code": "NOT_FOUND",
-    "message": "The requested resource was not found.",
-    "correlation_id": "01J..."
-  }
-}
-```
-
-### Correlation IDs
-Every request gets an `X-Correlation-ID` header (ULID-based, time-sortable).  
-Callers can supply their own; the server echoes it back.
-
-### Security
-- Secrets only from environment variables — never hardcoded
-- Sensitive fields redacted from logs (`password`, `token`, `authorization`, etc.)
-- Request body is never logged
-- Error responses strip internal details and stack traces
+1. **Dependency Inversion & Layer Isolation:**
+   - **Domain Layer:** Contains raw business logic. Strictly prohibits `FastAPI`, `SQLAlchemy`, or any volatile external framework imports.
+   - **Core Layer:** Manages foundational elements (Pydantic, stdlib).
+   - **API Layer:** Interfaces with HTTP requests but never bypasses the domain to interact directly with persistence engines.
+2. **Deterministic Error Handling:**
+   All public API faults adhere to a strict JSON contract to ensure predictable client consumption:
+   ```json
+   {
+     "error": {
+       "code": "NOT_FOUND",
+       "message": "The requested resource was not found.",
+       "correlation_id": "01H..."
+     }
+   }
+   ```
+3. **Traceability:**
+   Every request is tagged with a time-sortable ULID (`X-Correlation-ID`) acting as a universal context tracer across services and logs.
+4. **Security by Design:**
+   - Imperative reliance on environment variables for sensitive parameters.
+   - Automatic redaction of sensitive telemetry (e.g., tokens, passwords).
+   - Opaque error stack traces in production environments.
 
 ---
 
-## Health Endpoints
+## 🗺️ Roadmap & Milestone Tracking
 
-| Endpoint | Purpose | Notes |
-|----------|---------|-------|
-| `GET /api/v1/health/live` | Liveness probe | Always 200 if process is alive |
-| `GET /api/v1/health/ready` | Readiness probe | 200/503 based on DB reachability |
-
----
-
-## Migrations
-
-```bash
-# Apply all pending migrations
-uv run alembic upgrade head
-
-# Create a new migration
-uv run alembic revision --autogenerate -m "add_patient_table"
-
-# Check current migration state
-uv run alembic current
-
-# Rollback one step
-uv run alembic downgrade -1
-```
-
-> **Note:** `DATABASE_URL` must be set in `.env` or environment before running Alembic.
+| Phase | Milestone | Execution Status |
+| :---: | :--- | :--- |
+| **1** | Backend Infrastructure & Architectural Foundation | ✅ **Complete** |
+| **2** | Domain Modeling & Persistence Implementations | ⬜ Pending |
+| **3** | Document Ingestion Pipelines | ⬜ Pending |
+| **4** | Human-in-the-Loop Reviewer Workflow | ⬜ Pending |
+| **5** | Asynchronous Task Orchestration (Celery + Redis) | ⬜ Pending |
+| **6** | Production Hardening & Docker Containerization | ⬜ Pending |
 
 ---
-
-## Step Status
-
-| Step | Status | Description |
-|------|--------|-------------|
-| Step 1 | ✅ Complete | Backend foundation (this implementation) |
-| Step 2 | ⬜ Pending | Domain models + persistence layer |
-| Step 3 | ⬜ Pending | Document ingestion pipeline |
-| Step 4 | ⬜ Pending | Reviewer workflow |
-| Step 5 | ⬜ Pending | Async task processing (Celery + Redis) |
-| Step 6 | ⬜ Pending | Production hardening + Docker |
-# CareIntel
+*Maintained with engineering rigor by the CareIntel Systems Architecture Team.*
