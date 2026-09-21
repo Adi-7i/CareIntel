@@ -31,3 +31,11 @@ class Permission(StrEnum):
     # Structuring
     STRUCTURING_READ = "structuring:read"
     STRUCTURING_WRITE = "structuring:write"
+
+    # Knowledge (Phase 7)
+    KNOWLEDGE_READ = "knowledge:read"
+    KNOWLEDGE_WRITE = "knowledge:write"
+
+    # AI (Phase 7)
+    AI_READ = "ai:read"
+    AI_WRITE = "ai:write"
