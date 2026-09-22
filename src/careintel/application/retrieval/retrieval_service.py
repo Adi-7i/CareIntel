@@ -34,7 +34,7 @@ from careintel.domain.retrieval.models import (
     RetrievalMetadata,
     RetrievalResult,
 )
-from careintel.domain.retrieval.status import SearchMode, RetrievalStatus
+from careintel.domain.retrieval.status import RetrievalStatus, SearchMode
 from careintel.infrastructure.embedding.port import EmbeddingProvider
 from careintel.infrastructure.reranker.port import RerankProvider
 from careintel.persistence.models.audit import AuditLogORM

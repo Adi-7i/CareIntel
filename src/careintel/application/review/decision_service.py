@@ -7,7 +7,12 @@ from __future__ import annotations
 import datetime
 import uuid
 
-from careintel.core.errors import AuthorizationError, ConcurrencyError, InvalidTransitionError, NotFoundError
+from careintel.core.errors import (
+    AuthorizationError,
+    ConcurrencyError,
+    InvalidTransitionError,
+    NotFoundError,
+)
 from careintel.domain.audit.events import AuditEventType
 from careintel.domain.auth.models import UserContext
 from careintel.domain.auth.permissions import Permission
@@ -85,7 +90,7 @@ class ReviewDecisionService:
         elif decision_type == ReviewDecisionType.ESCALATE:
             # We defer escalation logic to the EscalationService. This would be a 422 here if used directly.
             raise InvalidTransitionError("Use Escalation API to escalate a case.")
-        
+
         # 6. Validate Case transition
         try:
             CaseStateMachine.validate_transition(case_orm.state, target_case_state)
@@ -97,7 +102,7 @@ class ReviewDecisionService:
         # 7. Apply updates
         case_orm.state = target_case_state.value
         case_orm.version += 1
-        
+
         queue_item.status = ReviewQueueStatus.REVIEW_COMPLETE.value
         queue_item.version += 1
         queue_item.updated_at = now
@@ -124,5 +129,5 @@ class ReviewDecisionService:
                 detail={"decision_type": decision_type.value},
             )
         )
-        
+
         # In full impl, outbox_dispatcher.publish("REVIEW_COMPLETED", payload={...})

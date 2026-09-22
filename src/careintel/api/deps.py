@@ -28,7 +28,6 @@ from careintel.application.auth.token_service import JWTService
 from careintel.application.case.case_service import CaseService
 from careintel.application.evidence.evidence_service import EvidenceService
 from careintel.application.evidence.file_validator import FileValidator
-from careintel.application.knowledge.knowledge_service import KnowledgeService
 from careintel.application.processing.document_processor import DocumentProcessor
 from careintel.application.processing.extraction_processor import ExtractionProcessor
 from careintel.application.processing.language_processor import LanguageProcessor
@@ -95,6 +94,7 @@ DbSessionDep = Annotated[AsyncSession, Depends(_db_session_provider)]
 
 from careintel.application.auth.consent_service import ConsentService
 from careintel.persistence.repositories.consent_repo import ConsentRepository
+
 
 def get_consent_service(session: DbSessionDep) -> ConsentService:
     return ConsentService(
@@ -306,7 +306,6 @@ def get_processing_service(
 
 # ── Speech / TTS Services ──────────────────────────────────────────────────────
 
-from careintel.application.audio.speech_service import SpeechService
 
 
 def get_speech_service(

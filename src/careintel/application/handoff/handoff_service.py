@@ -8,7 +8,12 @@ import datetime
 import hashlib
 import uuid
 
-from careintel.core.errors import AuthorizationError, ConsentError, InvalidTransitionError, NotFoundError
+from careintel.core.errors import (
+    AuthorizationError,
+    ConsentError,
+    InvalidTransitionError,
+    NotFoundError,
+)
 from careintel.domain.audit.events import AuditEventType
 from careintel.domain.auth.models import UserContext
 from careintel.domain.auth.permissions import Permission
@@ -73,7 +78,7 @@ class HandoffService:
              raise NotFoundError("Active recipient not found.")
 
         idempotency_key = self._generate_idempotency_key(case_orm.id, package_id, recipient_id)
-        
+
         # In a real impl, we might catch a unique constraint violation on idempotency_key
         # and return the existing HandoffORM.
 
@@ -147,14 +152,14 @@ class HandoffService:
 
         now = datetime.datetime.now(datetime.UTC)
         handoff.attempt_count += 1
-        
+
         if success:
              HandoffStateMachine.validate_transition(handoff.status, HandoffStatus.SENT)
              handoff.status = HandoffStatus.SENT.value
              handoff.delivery_reference = reference
              handoff.version += 1
              handoff.updated_at = now
-             
+
              await self.audit_repo.append(
                  AuditLogORM(
                      event_type=AuditEventType.HANDOFF_SENT.value,
@@ -170,7 +175,7 @@ class HandoffService:
              handoff.failure_reason = failure_reason
              handoff.version += 1
              handoff.updated_at = now
-             
+
              await self.audit_repo.append(
                  AuditLogORM(
                      event_type=AuditEventType.HANDOFF_DELIVERY_FAILED.value,
@@ -186,11 +191,11 @@ class HandoffService:
     ) -> HandoffORM:
         """Manually or via webhook record acknowledgement."""
         # For simplicity, treating as actor action here. Webhook would use a system actor.
-        
+
         handoff = await self.handoff_repo.get_handoff_for_update(handoff_id)
         if not handoff:
             raise NotFoundError("Handoff not found.")
-            
+
         try:
              HandoffStateMachine.validate_transition(handoff.status, HandoffStatus.ACKNOWLEDGED)
         except InvalidTransitionError:
@@ -227,7 +232,7 @@ class HandoffService:
         handoff = await self.handoff_repo.get_handoff_for_update(handoff_id)
         if not handoff:
             raise NotFoundError("Handoff not found.")
-            
+
         try:
              HandoffStateMachine.validate_transition(handoff.status, HandoffStatus.COMPLETED)
         except InvalidTransitionError:

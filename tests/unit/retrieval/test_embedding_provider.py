@@ -3,12 +3,13 @@ Unit tests for the DemoEmbeddingProvider.
 """
 
 import math
+
 import pytest
 
 from careintel.infrastructure.embedding.demo_provider import (
-    DemoEmbeddingProvider,
     _DEMO_DIMENSION,
     _DEMO_VERSION_KEY,
+    DemoEmbeddingProvider,
 )
 from careintel.infrastructure.embedding.port import EmbeddingProvider
 

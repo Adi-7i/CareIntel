@@ -2,12 +2,11 @@
 OCR Provider interface.
 """
 
+from dataclasses import dataclass
 from typing import Protocol
 
 from careintel.domain.processing.processing_models import OcrPage, OcrRegion
 
-
-from dataclasses import dataclass, field
 
 @dataclass(frozen=True)
 class OcrTableData:

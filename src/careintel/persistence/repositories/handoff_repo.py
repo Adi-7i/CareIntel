@@ -3,9 +3,9 @@ Handoff and Referral repositories.
 """
 
 import uuid
-from typing import Sequence
+from collections.abc import Sequence
 
-from sqlalchemy import select, update
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from careintel.persistence.models.handoff import HandoffORM, RecipientORM, ReferralPackageORM

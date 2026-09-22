@@ -10,8 +10,9 @@ from __future__ import annotations
 
 import os
 import uuid
-import httpx
 from typing import Literal
+
+import httpx
 
 from careintel.domain.processing.processing_models import TranscriptSegment
 from careintel.infrastructure.stt.port import SpeechProvider, SpeechResult
@@ -48,7 +49,7 @@ class AzureSpeechProvider(SpeechProvider):
         headers = {
             "api-key": self._api_key,
         }
-        
+
         # Determine format based on mode
         data = {
             "response_format": "json",
@@ -61,12 +62,12 @@ class AzureSpeechProvider(SpeechProvider):
                     "file": (filename, f, "audio/mpeg") # Will adapt based on actual file, but basic mpeg is fine for fallback
                 }
                 response = await client.post(url, headers=headers, data=data, files=files)
-                
+
         if response.status_code != 200:
             raise RuntimeError(f"Azure OpenAI STT Error: {response.status_code} - {response.text}")
-            
+
         json_resp = response.json()
-        
+
         segments = json_resp.get("segments", [])
         domain_segments = []
 

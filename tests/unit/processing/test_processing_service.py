@@ -8,7 +8,6 @@ from unittest.mock import AsyncMock
 import pytest
 
 from careintel.application.processing.processing_service import ProcessingService
-from careintel.core.errors import CareIntelError
 from careintel.domain.auth.models import UserContext
 from careintel.domain.processing.processing_commands import TriggerProcessingCommand
 from careintel.domain.processing.processor_type import ProcessorType
@@ -56,7 +55,7 @@ async def test_trigger_document_ocr(
 ) -> None:
     evidence_id = uuid.uuid4()
     run_id = uuid.uuid4()
-    
+
     task_mock = AsyncMock()
     task_mock.id = run_id
     mocks["task_service"].get_or_create_task.return_value = task_mock
@@ -76,7 +75,7 @@ async def test_trigger_language_norm(
 ) -> None:
     evidence_id = uuid.uuid4()
     run_id = uuid.uuid4()
-    
+
     task_mock = AsyncMock()
     task_mock.id = run_id
     mocks["task_service"].get_or_create_task.return_value = task_mock

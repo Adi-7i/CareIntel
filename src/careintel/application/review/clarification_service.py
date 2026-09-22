@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import datetime
 import uuid
-from typing import Sequence
+from collections.abc import Sequence
 
 from careintel.core.errors import AuthorizationError, InvalidTransitionError, NotFoundError
 from careintel.domain.audit.events import AuditEventType

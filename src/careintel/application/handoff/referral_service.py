@@ -4,9 +4,9 @@ Referral Package Service.
 
 from __future__ import annotations
 
-import datetime
 import uuid
-from typing import Any, Sequence
+from collections.abc import Sequence
+from typing import Any
 
 from careintel.core.errors import AuthorizationError, ConsentError, NotFoundError
 from careintel.domain.audit.events import AuditEventType
@@ -14,8 +14,6 @@ from careintel.domain.auth.models import UserContext
 from careintel.domain.auth.permissions import Permission
 from careintel.domain.auth.policy import AuthorizationPolicy
 from careintel.domain.case.states import CaseState
-from careintel.domain.consent.policy import ConsentPolicy
-from careintel.domain.consent.purpose import ConsentPurpose
 from careintel.persistence.models.audit import AuditLogORM
 from careintel.persistence.models.handoff import ReferralPackageORM
 from careintel.persistence.repositories.audit_repo import AuditRepository
@@ -36,11 +34,11 @@ class ReferralPackageService:
         self.handoff_repo = handoff_repo
         self.case_repo = case_repo
         self.audit_repo = audit_repo
-        
+
     # Mocking for phase 9 structure demonstration
     async def _check_consent(self, subject_id: uuid.UUID) -> bool:
         """Mock check for REFERRAL consent."""
-        return True 
+        return True
 
     async def prepare_referral_package(
         self,
@@ -55,7 +53,7 @@ class ReferralPackageService:
         case_orm = await self.case_repo.get_by_id(case_id)
         if not case_orm:
             raise NotFoundError("Case not found.")
-            
+
         # 1. Gate: Check Consent
         has_consent = await self._check_consent(case_orm.patient_id)
         if not has_consent:
@@ -75,7 +73,7 @@ class ReferralPackageService:
         # 2. Gate: Case State must allow referral
         if case_orm.state not in (CaseState.REFERRED.value, CaseState.COMPLETED.value):
              # Depending on exact workflow, they might prepare it in REVIEWED just before transition
-             pass 
+             pass
 
         # 3. Data minimization: Validate provided evidence_ids exist and are linked to case
         # (Omitted in this mock, but would query EvidenceRepository)
@@ -109,7 +107,7 @@ class ReferralPackageService:
             correlation_id=correlation_id,
         )
         await self.handoff_repo.create_referral_package(package)
-        
+
         if latest_package:
              package.superseded_by = latest_package.id
 
@@ -140,7 +138,7 @@ class ReferralPackageService:
              return package # Idempotent if already FINALIZED or SUPERSEDED
 
         package.status = "FINALIZED"
-        
+
         await self.audit_repo.append(
              AuditLogORM(
                  event_type=AuditEventType.REFERRAL_PACKAGE_FINALIZED.value,

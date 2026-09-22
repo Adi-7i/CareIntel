@@ -3,11 +3,15 @@ Unit tests for the Deterministic AI Safety Policy Service.
 """
 
 import uuid
-from typing import Any
 
 from careintel.application.ai.policy_service import PolicyService
 from careintel.domain.ai.models import AIDraft, ClaimProvenance, ContextPassage, SafeContext
-from careintel.domain.ai.status import ContentOrigin, DraftReviewerStatus, PolicyOutcome, ValidationStatus
+from careintel.domain.ai.status import (
+    ContentOrigin,
+    DraftReviewerStatus,
+    PolicyOutcome,
+    ValidationStatus,
+)
 
 
 def test_provenance_integrity_rule_passes() -> None:
@@ -33,7 +37,7 @@ def test_provenance_integrity_rule_passes() -> None:
         conflicting_information=[],
         retrieval_metadata=None,
     )
-    
+
     # Setup draft citing the valid source IDs
     draft = AIDraft(
         draft_id=uuid.uuid4(),
@@ -49,10 +53,10 @@ def test_provenance_integrity_rule_passes() -> None:
         reviewed_at=None,
         created_at=None,  # type: ignore
     )
-    
+
     service = PolicyService()
     decisions = service.evaluate_draft(draft, context)
-    
+
     assert len(decisions) == 1
     assert decisions[0].outcome == PolicyOutcome.PASS
 
@@ -60,7 +64,7 @@ def test_provenance_integrity_rule_passes() -> None:
 def test_provenance_integrity_rule_fails() -> None:
     valid_id1 = uuid.uuid4()
     invalid_id = uuid.uuid4()
-    
+
     context = SafeContext(
         system_instructions="",
         task_instructions="",
@@ -78,7 +82,7 @@ def test_provenance_integrity_rule_fails() -> None:
         conflicting_information=[],
         retrieval_metadata=None,
     )
-    
+
     draft = AIDraft(
         draft_id=uuid.uuid4(),
         ai_run_id=uuid.uuid4(),
@@ -93,13 +97,13 @@ def test_provenance_integrity_rule_fails() -> None:
         reviewed_at=None,
         created_at=None,  # type: ignore
     )
-    
+
     service = PolicyService()
     decisions = service.evaluate_draft(draft, context)
-    
+
     assert len(decisions) == 1
     assert decisions[0].outcome == PolicyOutcome.FAIL
-    
+
     detail = decisions[0].detail
     assert isinstance(detail, dict)
     assert "invalid_source_ids" in detail

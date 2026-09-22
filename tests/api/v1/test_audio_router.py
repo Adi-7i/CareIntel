@@ -10,7 +10,6 @@ from careintel.api.deps import get_current_user, get_speech_service
 from careintel.application.audio.speech_service import SpeechService
 from careintel.domain.auth.models import UserContext
 from careintel.infrastructure.tts.demo_provider import DemoTTSProvider
-from careintel.main import app
 from careintel.persistence.repositories.audit_repo import AuditRepository
 
 
@@ -48,7 +47,7 @@ async def test_synthesize_speech_success(
         json={"text": "Hello world", "voice": "nova"},
         headers={"Authorization": "Bearer dummy"}
     )
-    
+
     assert response.status_code == 200
     assert response.headers["content-type"] == "audio/wav"
     assert len(response.content) > 0
@@ -64,7 +63,7 @@ async def test_synthesize_speech_unauthorized(
         "/api/v1/audio/speech",
         json={"text": "Hello world"},
     )
-    
+
     assert response.status_code == 401
 
 
@@ -83,5 +82,5 @@ async def test_synthesize_speech_text_too_long(
         json={"text": long_text},
         headers={"Authorization": "Bearer dummy"}
     )
-    
+
     assert response.status_code == 422

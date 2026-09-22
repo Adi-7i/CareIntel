@@ -11,8 +11,8 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass, field
 
-from sqlalchemy.ext.asyncio import AsyncEngine
 import redis.asyncio as redis
+from sqlalchemy.ext.asyncio import AsyncEngine
 
 from careintel.core.config import get_settings
 from careintel.core.database import check_database_liveness
@@ -49,7 +49,7 @@ async def check_readiness(engine: AsyncEngine, blob_provider: BlobStoragePort) -
 
     db_ok = await check_database_liveness(engine)
     checks["database"] = "ok" if db_ok else "unavailable"
-    
+
     redis_ok = False
     redis_url = settings.redis_url.get_secret_value() if settings.redis_url else None
     if redis_url:
@@ -64,9 +64,9 @@ async def check_readiness(engine: AsyncEngine, blob_provider: BlobStoragePort) -
         # If running locally without redis, we consider it ok (demo mode)
         # In production, settings validation would have failed startup if redis_url was missing.
         redis_ok = not settings.is_production
-    
+
     checks["redis"] = "ok" if redis_ok else "unavailable"
-    
+
     blob_ok = False
     try:
         # Just check existence of a dummy key. This touches the storage account without downloading anything.
@@ -74,7 +74,7 @@ async def check_readiness(engine: AsyncEngine, blob_provider: BlobStoragePort) -
         blob_ok = True
     except Exception as e:
         logger.warning(f"Blob storage health check failed: {e}")
-        
+
     checks["blob_storage"] = "ok" if blob_ok else "unavailable"
 
     elapsed_ms = (time.perf_counter() - start) * 1000

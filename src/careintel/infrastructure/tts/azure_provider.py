@@ -45,7 +45,7 @@ class AzureTTSProvider(TTSProvider):
             "api-key": self._api_key,
             "Content-Type": "application/json"
         }
-        
+
         data = {
             "model": self._deployment,
             "input": text,
@@ -54,12 +54,12 @@ class AzureTTSProvider(TTSProvider):
 
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.post(url, headers=headers, json=data)
-            
+
         if response.status_code != 200:
             raise RuntimeError(f"Azure OpenAI TTS Error: {response.status_code} - {response.text}")
-            
+
         audio_bytes = response.content
-        
+
         # Azure typically returns audio/mpeg for TTS
         return TTSResult(
             audio_bytes=audio_bytes,

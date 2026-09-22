@@ -47,7 +47,7 @@ async def synthesize_speech(
         voice=request.voice,
         user=user,
     )
-    
+
     # Map common formats to their mime types
     media_types = {
         "mp3": "audio/mpeg",
@@ -56,7 +56,7 @@ async def synthesize_speech(
         "aac": "audio/aac",
         "flac": "audio/flac",
     }
-    
+
     media_type = media_types.get(result.audio_format, "application/octet-stream")
-    
+
     return Response(content=result.audio_bytes, media_type=media_type)

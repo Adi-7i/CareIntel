@@ -45,7 +45,7 @@ class AsyncTaskRepository:
         """Update the status of a task."""
         now = datetime.datetime.now(datetime.UTC)
         updates = {"status": status.value}
-        
+
         if status == AsyncTaskStatus.QUEUED:
             updates["queued_at"] = now
         elif status == AsyncTaskStatus.RUNNING:

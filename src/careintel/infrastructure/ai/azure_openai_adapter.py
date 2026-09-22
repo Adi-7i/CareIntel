@@ -15,7 +15,7 @@ from typing import Any
 from openai import AsyncAzureOpenAI
 
 from careintel.domain.ai.models import AITaskConfig, SafeContext
-from careintel.infrastructure.ai.port import LLMProvider, LLMProviderError, LLMResult
+from careintel.infrastructure.ai.port import LLMProviderError, LLMResult
 
 
 class AzureOpenAIAdapter:
@@ -56,8 +56,8 @@ class AzureOpenAIAdapter:
         try:
             response = await self._client.chat.completions.create(
                 model=self._deployment, # Azure uses deployment name as the model
-                messages=messages,  # type: ignore[arg-type]
-                response_format=response_format,  # type: ignore[arg-type]
+                messages=messages,
+                response_format=response_format,
                 timeout=config.timeout_seconds,
                 seed=42,          # Request best-effort determinism
             )

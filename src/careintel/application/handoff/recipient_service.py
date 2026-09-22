@@ -5,7 +5,7 @@ Recipient Service.
 from __future__ import annotations
 
 import uuid
-from typing import Sequence
+from collections.abc import Sequence
 
 from careintel.core.errors import AuthorizationError, NotFoundError
 from careintel.domain.auth.models import UserContext
@@ -29,7 +29,7 @@ class RecipientService:
     async def get_recipient(self, recipient_id: uuid.UUID, actor: UserContext) -> RecipientORM:
         if not AuthorizationPolicy.evaluate(actor, Permission.HANDOFF_READ):
              raise AuthorizationError("Actor not authorized to read recipients.")
-        
+
         recipient = await self.handoff_repo.get_recipient(recipient_id)
         if not recipient:
              raise NotFoundError("Recipient not found.")

@@ -3,16 +3,12 @@ Integration tests for the Structuring API.
 """
 
 import uuid
-from typing import Any
 
 import pytest
 from httpx import AsyncClient
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from careintel.domain.auth.models import UserContext
 from careintel.domain.auth.permissions import Permission
-from careintel.persistence.models.structuring import StructuringRunORM
-from careintel.persistence.repositories.structuring_repo import StructuringRepository
 
 
 @pytest.fixture
@@ -46,7 +42,7 @@ async def test_evaluate_case_unauthorized(
 
 
 # Since testing the full flow requires mocked auth, consent, and case fixtures,
-# and this is a skeleton prototype for Phase 6, we will focus on asserting that 
+# and this is a skeleton prototype for Phase 6, we will focus on asserting that
 # the route exists and is protected.
 
 async def test_get_timeline_protected(

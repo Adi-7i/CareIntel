@@ -6,9 +6,12 @@ from __future__ import annotations
 
 import datetime
 import uuid
-from typing import Sequence
 
-from careintel.core.errors import AuthorizationError, ConcurrencyError, InvalidTransitionError, NotFoundError
+from careintel.core.errors import (
+    AuthorizationError,
+    InvalidTransitionError,
+    NotFoundError,
+)
 from careintel.domain.audit.events import AuditEventType
 from careintel.domain.auth.models import UserContext
 from careintel.domain.auth.permissions import Permission
@@ -94,7 +97,7 @@ class ReviewService:
 
         # Note: In a real system we would also validate that `reviewer_id` is a valid user
         # with access to `case_orm.facility_id` and has REVIEW_WRITE permission.
-        
+
         now = datetime.datetime.now(datetime.UTC)
         item.status = ReviewQueueStatus.ASSIGNED.value
         item.assigned_reviewer_id = reviewer_id

@@ -62,7 +62,7 @@ class SpeechService:
 
         try:
             result = await self.tts_provider.synthesize(text=text, voice=voice)
-            
+
             # Audit success
             await self._audit_event(
                 event_type=AuditEventType.PROCESSING_COMPLETED,
@@ -76,9 +76,9 @@ class SpeechService:
                     "voice": result.voice,
                 }
             )
-            
+
             return result
-            
+
         except Exception as e:
             # Audit failure
             await self._audit_event(

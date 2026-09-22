@@ -1,7 +1,7 @@
 import os
 from unittest import mock
-from pydantic import SecretStr
-from careintel.core.config import Settings, Environment
+
+from careintel.core.config import Settings
 
 
 @mock.patch.dict(os.environ, {
@@ -12,17 +12,17 @@ from careintel.core.config import Settings, Environment
 })
 def test_celery_broker_prefers_redis_url():
     """Verify that if REDIS_URL is provided, it is used as the broker."""
-    # We must instantiate Settings directly to capture the mocked environ, 
+    # We must instantiate Settings directly to capture the mocked environ,
     # since get_settings() is cached.
     settings = Settings(_env_file=None)
-    
+
     # Simulate what celery_app.py does
     broker_url = (
         settings.redis_url.get_secret_value()
         if settings.redis_url
         else settings.celery_broker_url.get_secret_value()
     )
-    
+
     assert broker_url == "redis://test-redis:6379/2"
 
 
@@ -38,15 +38,15 @@ def test_celery_broker_falls_back_to_celery_broker_url():
     # Ensure REDIS_URL is explicitly clear
     if "REDIS_URL" in os.environ:
         del os.environ["REDIS_URL"]
-        
+
     settings = Settings(_env_file=None)
-    
+
     broker_url = (
         settings.redis_url.get_secret_value()
         if settings.redis_url
         else settings.celery_broker_url.get_secret_value()
     )
-    
+
     assert broker_url == "redis://localhost:6379/1"
 
 
@@ -54,7 +54,7 @@ def test_celery_app_configuration():
     """Verify Celery task configurations."""
     # Import inside test to avoid loading cached settings at module level
     from careintel.workers.celery_app import celery_app
-    
+
     assert celery_app.conf.task_acks_late is True
     assert celery_app.conf.task_reject_on_worker_lost is True
     # Default queue should be matched

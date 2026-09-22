@@ -7,7 +7,12 @@ from __future__ import annotations
 import datetime
 import uuid
 
-from careintel.core.errors import AuthorizationError, ConcurrencyError, InvalidTransitionError, NotFoundError
+from careintel.core.errors import (
+    AuthorizationError,
+    ConcurrencyError,
+    InvalidTransitionError,
+    NotFoundError,
+)
 from careintel.domain.audit.events import AuditEventType
 from careintel.domain.auth.models import UserContext
 from careintel.domain.auth.permissions import Permission
@@ -66,7 +71,7 @@ class EscalationService:
 
         case_orm.state = CaseState.ESCALATED.value
         case_orm.version += 1
-        
+
         queue_item.status = ReviewQueueStatus.ESCALATED.value
         queue_item.version += 1
         queue_item.updated_at = now
@@ -114,7 +119,7 @@ class EscalationService:
             return escalation # Idempotent
 
         case_id = escalation.case_id
-        
+
         case_orm = await self.case_repo.get_for_update(case_id, expected_case_version)
         if not case_orm:
             raise ConcurrencyError("Case missing or modified.")
@@ -131,15 +136,15 @@ class EscalationService:
             raise InvalidTransitionError("Cannot resolve escalation from current state.") from e
 
         now = datetime.datetime.now(datetime.UTC)
-        
+
         escalation.status = EscalationStatus.RESOLVED.value
         escalation.resolved_by = actor.id
         escalation.resolution_notes = resolution_notes
         escalation.resolved_at = now
-        
+
         case_orm.state = CaseState.REVIEWED.value
         case_orm.version += 1
-        
+
         queue_item.status = ReviewQueueStatus.IN_REVIEW.value
         queue_item.version += 1
         queue_item.updated_at = now

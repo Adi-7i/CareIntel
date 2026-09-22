@@ -67,7 +67,7 @@ class CaseService:
         This simply sets up the initial case state.
         """
         case_id = uuid.uuid4()
-        now = datetime.datetime.now(datetime.UTC)
+        now = datetime.datetime.now(datetime.UTC).replace(tzinfo=None)
 
         # 1. Create ORM
         case_orm = CaseORM(
@@ -211,7 +211,7 @@ class CaseService:
         # Transition
         new_version = cmd.expected_version + 1
         to_state_str = str(cmd.to_state)
-        now = datetime.datetime.now(datetime.UTC)
+        now = datetime.datetime.now(datetime.UTC).replace(tzinfo=None)
 
         updated = await self.case_repo.update_state(cmd.case_id, to_state_str, new_version)
         if not updated:

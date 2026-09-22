@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from openai import AsyncAzureOpenAI
 
-from careintel.infrastructure.embedding.port import EmbeddingProvider, EmbeddingResult
+from careintel.infrastructure.embedding.port import EmbeddingResult
 
 
 class AzureEmbeddingProvider:
@@ -58,12 +58,12 @@ class AzureEmbeddingProvider:
         """
         if not texts:
             return []
-            
+
         response = await self._client.embeddings.create(
             input=texts,
             model=self._deployment
         )
-        
+
         results = []
         for i, data in enumerate(response.data):
             vector = data.embedding

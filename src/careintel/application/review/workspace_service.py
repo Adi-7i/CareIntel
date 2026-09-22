@@ -49,7 +49,7 @@ class WorkspaceService:
         # - Derived Information (from ExtractionRepository/AI)
         # - AI Drafts + Edits (from AIDraftRepository & ReviewRepository)
         # - Referral Packages (from HandoffRepository)
-        
+
         workspace = {
             "case": {
                 "id": str(case_orm.id),

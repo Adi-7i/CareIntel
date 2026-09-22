@@ -109,12 +109,13 @@ def create_app() -> FastAPI:
             mode = "diarize" if settings.stt_provider == "azure_openai_diarize" else "transcribe"
             deployment = settings.azure_stt_diarize_deployment if mode == "diarize" else settings.azure_stt_deployment
             api_version = settings.azure_stt_diarize_api_version if mode == "diarize" else settings.azure_stt_api_version
+            from typing import cast, Literal
             _app.state.speech_provider = AzureSpeechProvider(
                 endpoint=settings.azure_openai_endpoint,
                 api_key=settings.azure_openai_api_key.get_secret_value(),
                 api_version=api_version,
                 deployment=deployment,
-                mode=mode,
+                mode=cast(Literal["transcribe", "diarize"], mode),
             )
         else:
             _app.state.speech_provider = DemoSpeechProvider()
@@ -135,7 +136,9 @@ def create_app() -> FastAPI:
 
         # ── OCR Provider ──────────────────────────────────────────────────────────
         if settings.ocr_provider == "azure_document_intelligence" and settings.azure_document_intelligence_endpoint and settings.azure_document_intelligence_key:
-            from careintel.infrastructure.ocr.azure_provider import AzureDocumentIntelligenceProvider
+            from careintel.infrastructure.ocr.azure_provider import (
+                AzureDocumentIntelligenceProvider,
+            )
             _app.state.ocr_provider = AzureDocumentIntelligenceProvider(
                 endpoint=settings.azure_document_intelligence_endpoint,
                 key=settings.azure_document_intelligence_key.get_secret_value(),

@@ -5,7 +5,7 @@ Azure Blob Storage provider.
 import datetime
 from collections.abc import AsyncIterator
 
-from azure.core.exceptions import ResourceNotFoundError, ResourceExistsError
+from azure.core.exceptions import ResourceExistsError, ResourceNotFoundError
 from azure.storage.blob import BlobSasPermissions, generate_blob_sas
 from azure.storage.blob.aio import BlobServiceClient
 
@@ -47,7 +47,7 @@ class AzureBlobProvider(BlobStoragePort):
             await blob_client.upload_blob(data, length=size, overwrite=False)
             latency = (datetime.datetime.now() - start_time).total_seconds()
             logger.info(
-                f"Uploaded blob to Azure Storage",
+                "Uploaded blob to Azure Storage",
                 extra={
                     "blob_key": key,
                     "container": self._container_name,
@@ -75,10 +75,10 @@ class AzureBlobProvider(BlobStoragePort):
         try:
             blob_client = self._container_client.get_blob_client(key)
             stream = await blob_client.download_blob()
-            
+
             latency = (datetime.datetime.now() - start_time).total_seconds()
             logger.info(
-                f"Started download stream from Azure Storage",
+                "Started download stream from Azure Storage",
                 extra={
                     "blob_key": key,
                     "container": self._container_name,
@@ -86,7 +86,7 @@ class AzureBlobProvider(BlobStoragePort):
                     "success": True,
                 }
             )
-            
+
             async for chunk in stream.chunks():
                 yield chunk
         except Exception as e:
@@ -107,7 +107,7 @@ class AzureBlobProvider(BlobStoragePort):
             blob_client = self._container_client.get_blob_client(key)
             await blob_client.delete_blob()
             logger.info(
-                f"Deleted blob from Azure Storage",
+                "Deleted blob from Azure Storage",
                 extra={
                     "blob_key": key,
                     "container": self._container_name,

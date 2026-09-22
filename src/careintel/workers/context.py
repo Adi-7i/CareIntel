@@ -2,9 +2,9 @@
 Worker context setup.
 """
 
-from contextlib import contextmanager
-from typing import Generator
 import uuid
+from collections.abc import Generator
+from contextlib import contextmanager
 
 from careintel.core.correlation import _correlation_id_var
 from careintel.domain.auth.models import UserContext

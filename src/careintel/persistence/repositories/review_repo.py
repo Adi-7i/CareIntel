@@ -3,9 +3,9 @@ Review repositories.
 """
 
 import uuid
-from typing import Sequence
+from collections.abc import Sequence
 
-from sqlalchemy import select, update
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from careintel.persistence.models.review import (
@@ -47,7 +47,7 @@ class ReviewRepository:
         self.session.add(item)
         await self.session.flush()
         return item
-        
+
     async def list_queue_items(
         self,
         status: str | None = None,
@@ -64,12 +64,12 @@ class ReviewRepository:
             stmt = stmt.where(ReviewQueueItemORM.status == status)
         if assigned_to:
             stmt = stmt.where(ReviewQueueItemORM.assigned_reviewer_id == assigned_to)
-            
+
         stmt = stmt.order_by(
             ReviewQueueItemORM.priority_bucket.desc(),
             ReviewQueueItemORM.entered_queue_at.asc()
         ).limit(limit).offset(offset)
-        
+
         result = await self.session.execute(stmt)
         return result.scalars().all()
 

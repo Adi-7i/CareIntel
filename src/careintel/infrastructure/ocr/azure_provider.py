@@ -73,16 +73,16 @@ class AzureDocumentIntelligenceProvider(OcrProvider):
         # Map paragraphs/regions
         reading_order = 1
         page_id_map = {p.page_number: p.page_id for p in pages}
-        
+
         if hasattr(result, "paragraphs") and result.paragraphs:
             for para in result.paragraphs:
                 # Default to first page if spans are missing
                 page_num = 1
                 if para.bounding_regions and len(para.bounding_regions) > 0:
                     page_num = para.bounding_regions[0].page_number
-                
+
                 page_id = page_id_map.get(page_num, pages[0].page_id if pages else uuid.uuid4())
-                
+
                 bbox = None
                 if para.bounding_regions and len(para.bounding_regions) > 0:
                     bbox = para.bounding_regions[0].polygon
@@ -114,7 +114,7 @@ class AzureDocumentIntelligenceProvider(OcrProvider):
                         "content": cell.content,
                         "kind": cell.kind if hasattr(cell, "kind") else "content",
                     })
-                
+
                 # Simple markdown table generation for LLM
                 md_rows = []
                 for r in range(tbl.row_count):
@@ -125,7 +125,7 @@ class AzureDocumentIntelligenceProvider(OcrProvider):
                     if r == 0:
                         # Header separator
                         md_rows.append("|" + "|".join(["---" for _ in range(tbl.column_count)]) + "|")
-                        
+
                 markdown = "\n".join(md_rows)
 
                 tables.append(

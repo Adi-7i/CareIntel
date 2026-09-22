@@ -20,7 +20,7 @@ logger = get_task_logger(__name__)
 
 
 @celery_app.task(
-    bind=True, 
+    bind=True,
     name="careintel.tasks.retrieval.run_retrieval",
     autoretry_for=(ServiceUnavailableError, TimeoutError),
     retry_kwargs={"max_retries": 3},
@@ -36,21 +36,21 @@ def run_retrieval(self, task_id: str) -> None:
 async def _async_run_retrieval(celery_task, task_id_str: str) -> None:
     task_id = uuid.UUID(task_id_str)
     session_factory = get_session_factory()
-    
+
     async with session_factory() as session:
         task_repo = AsyncTaskRepository(session)
         task_service = AsyncTaskService(task_repo)
-        
+
         task = await task_service.get_task(task_id)
         if not task:
             return
-            
+
         if task.status in (AsyncTaskStatus.SUCCEEDED, AsyncTaskStatus.CANCELLED):
             return
-            
+
         await task_service.transition_status(task_id, AsyncTaskStatus.RUNNING)
         await session.commit()
-        
+
     try:
         async with session_factory() as session:
             with setup_worker_context(task.correlation_id, str(task.actor_id)) as actor:
@@ -62,7 +62,7 @@ async def _async_run_retrieval(celery_task, task_id_str: str) -> None:
             task_service = AsyncTaskService(task_repo)
             await task_service.transition_status(task_id, AsyncTaskStatus.SUCCEEDED)
             await session.commit()
-            
+
     except SoftTimeLimitExceeded:
         async with session_factory() as session:
             task_repo = AsyncTaskRepository(session)

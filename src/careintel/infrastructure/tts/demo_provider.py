@@ -17,7 +17,7 @@ class DemoTTSProvider(TTSProvider):
             b"RIFF\x24\x00\x00\x00WAVEfmt \x10\x00\x00\x00\x01\x00\x01\x00"
             b"\x40\x1f\x00\x00\x40\x1f\x00\x00\x01\x00\x08\x00data\x00\x00\x00\x00"
         )
-        
+
         return TTSResult(
             audio_bytes=fake_wav,
             audio_format="wav",
