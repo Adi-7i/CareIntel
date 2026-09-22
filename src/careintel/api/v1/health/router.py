@@ -59,7 +59,8 @@ async def liveness() -> JSONResponse:
 async def readiness(request: Request) -> JSONResponse:
     """Readiness probe — checks database and other dependencies."""
     engine = request.app.state.db_engine
-    health = await check_readiness(engine)
+    blob_provider = request.app.state.blob_provider
+    health = await check_readiness(engine, blob_provider)
 
     response_body = {
         "status": "ready" if health.ready else "not_ready",

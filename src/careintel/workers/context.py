@@ -12,7 +12,7 @@ from careintel.domain.auth.roles import Role
 
 # System worker actor UUID (reserved).
 # In a real migration, this UUID would be seeded into the users table.
-SYSTEM_WORKER_ACTOR_ID = uuid.UUID("00000000-0000-0000-0000-systemworker")
+SYSTEM_WORKER_ACTOR_ID = uuid.UUID("00000000-0000-0000-0000-000000000001")
 
 
 @contextmanager

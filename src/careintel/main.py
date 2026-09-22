@@ -66,10 +66,12 @@ def create_app() -> FastAPI:
 
         # Initialize Storage Provider
         if settings.azure_storage_connection_string:
-            _app.state.blob_provider = AzureBlobProvider(
+            provider = AzureBlobProvider(
                 connection_string=settings.azure_storage_connection_string.get_secret_value(),
                 container_name=settings.azure_storage_container,
             )
+            await provider.ensure_container()
+            _app.state.blob_provider = provider
         else:
             _app.state.blob_provider = FakeBlobProvider()
 

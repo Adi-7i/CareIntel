@@ -14,10 +14,23 @@ def create_celery_app() -> Celery:
     """
     settings = get_settings()
 
+    # Use redis_url if provided (production standard), fallback to celery_broker_url (dev)
+    broker_url = (
+        settings.redis_url.get_secret_value()
+        if settings.redis_url
+        else settings.celery_broker_url.get_secret_value()
+    )
+    
+    backend_url = (
+        settings.redis_url.get_secret_value()
+        if settings.redis_url
+        else (settings.celery_result_backend.get_secret_value() if settings.celery_result_backend else None)
+    )
+
     app = Celery(
         "careintel",
-        broker=settings.celery_broker_url.get_secret_value(),
-        backend=settings.celery_result_backend.get_secret_value() if settings.celery_result_backend else None,
+        broker=broker_url,
+        backend=backend_url,
     )
 
     app.conf.update(

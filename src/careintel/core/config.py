@@ -288,7 +288,11 @@ class Settings(BaseSettings):
         description="Extraction provider: demo, gpt",
     )
 
-    # ── Async Execution & Celery (Phase 8) ────────────
+    # ── Async Execution & Celery (Phase 8 & 12) ────────
+    redis_url: SecretStr | None = Field(
+        default=None,
+        description="Canonical Redis URL for caching, brokering, and async infra."
+    )
     celery_broker_url: SecretStr = Field(default=SecretStr("redis://localhost:6379/0"))
     celery_result_backend: SecretStr | None = Field(default=None)
     celery_task_default_queue: str = Field(default="careintel_default")
@@ -341,6 +345,16 @@ class Settings(BaseSettings):
         """Hard-fail if SQL echo is enabled in production."""
         if self.app_env == Environment.PRODUCTION and self.database_echo_sql:
             raise ValueError("database_echo_sql must be False when app_env is 'production'.")
+        return self
+
+    @model_validator(mode="after")
+    def _require_infra_in_production(self) -> Settings:
+        """Hard-fail if required production infrastructure is missing."""
+        if self.app_env == Environment.PRODUCTION:
+            if not self.azure_storage_connection_string:
+                raise ValueError("AZURE_STORAGE_CONNECTION_STRING must be set in production.")
+            if not self.redis_url:
+                raise ValueError("REDIS_URL must be set in production.")
         return self
 
     # ── Convenience properties ────────────────────────────────────────────────
