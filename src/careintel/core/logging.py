@@ -124,6 +124,9 @@ def configure_logging(settings: Settings) -> None:
 
     # Quieten noisy third-party loggers
     logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
+    logging.getLogger("azure.core.pipeline.policies.http_logging_policy").setLevel(logging.WARNING)
     logging.getLogger("sqlalchemy.engine").setLevel(
         logging.INFO if settings.database_echo_sql else logging.WARNING
     )
@@ -134,7 +137,6 @@ def configure_logging(settings: Settings) -> None:
         extra={
             "log_level": settings.app_log_level.value,
             "env": settings.app_env.value,
-            "database_url": settings.database_url_safe(),  # safe — credentials masked
         },
     )
 

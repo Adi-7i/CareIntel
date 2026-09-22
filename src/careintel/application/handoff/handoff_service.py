@@ -45,7 +45,9 @@ class HandoffService:
         """Mock check for REFERRAL consent."""
         return True
 
-    def _generate_idempotency_key(self, case_id: uuid.UUID, package_id: uuid.UUID, recipient_id: uuid.UUID) -> str:
+    def _generate_idempotency_key(
+        self, case_id: uuid.UUID, package_id: uuid.UUID, recipient_id: uuid.UUID
+    ) -> str:
         s = f"{case_id}:{package_id}:{recipient_id}"
         return hashlib.sha256(s.encode()).hexdigest()
 
@@ -64,18 +66,18 @@ class HandoffService:
             raise NotFoundError("Referral package not found.")
 
         if package.status != "FINALIZED":
-             raise InvalidTransitionError("Only FINALIZED packages can be handed off.")
+            raise InvalidTransitionError("Only FINALIZED packages can be handed off.")
 
         case_orm = await self.case_repo.get_by_id(package.case_id)
         if not case_orm:
             raise NotFoundError("Case not found.")
 
-        if not await self._check_consent(case_orm.patient_id):
-             raise ConsentError("Active consent for REFERRAL is required.")
+        if not await self._check_consent(case_orm.synthetic_subject_id):
+            raise ConsentError("Active consent for REFERRAL is required.")
 
         recipient = await self.handoff_repo.get_recipient(recipient_id)
         if not recipient or not recipient.is_active:
-             raise NotFoundError("Active recipient not found.")
+            raise NotFoundError("Active recipient not found.")
 
         idempotency_key = self._generate_idempotency_key(case_orm.id, package_id, recipient_id)
 
@@ -94,14 +96,14 @@ class HandoffService:
         await self.handoff_repo.create_handoff(handoff)
 
         await self.audit_repo.append(
-             AuditLogORM(
-                 event_type=AuditEventType.HANDOFF_INITIATED.value,
-                 actor_id=actor.id,
-                 target_id=handoff.id,
-                 target_type="handoff",
-                 correlation_id=correlation_id,
-                 outcome="SUCCESS",
-             )
+            AuditLogORM(
+                event_type=AuditEventType.HANDOFF_INITIATED.value,
+                actor_id=actor.id,
+                target_id=handoff.id,
+                target_type="handoff",
+                correlation_id=correlation_id,
+                outcome="SUCCESS",
+            )
         )
         return handoff
 
@@ -117,13 +119,13 @@ class HandoffService:
 
         # Re-verify consent at send time
         case_orm = await self.case_repo.get_by_id(handoff.case_id)
-        if not case_orm or not await self._check_consent(case_orm.patient_id):
-             raise ConsentError("Consent missing or revoked. Cannot send.")
+        if not case_orm or not await self._check_consent(case_orm.synthetic_subject_id):
+            raise ConsentError("Consent missing or revoked. Cannot send.")
 
         try:
-             HandoffStateMachine.validate_transition(handoff.status, HandoffStatus.READY)
+            HandoffStateMachine.validate_transition(handoff.status, HandoffStatus.READY)
         except InvalidTransitionError as e:
-             raise InvalidTransitionError("Handoff cannot be sent from current state.") from e
+            raise InvalidTransitionError("Handoff cannot be sent from current state.") from e
 
         # Transition through READY to SENDING
         HandoffStateMachine.validate_transition(HandoffStatus.READY, HandoffStatus.SENDING)
@@ -134,12 +136,17 @@ class HandoffService:
         handoff.version += 1
         handoff.updated_at = now
 
-        # In full impl: outbox_dispatcher.publish("HANDOFF_SEND_REQUESTED", payload={"handoff_id": ...})
+        # A complete implementation must publish HANDOFF_SEND_REQUESTED through the outbox.
 
         return handoff
 
     async def record_delivery_result(
-        self, handoff_id: uuid.UUID, success: bool, reference: str | None, failure_reason: str | None, correlation_id: str
+        self,
+        handoff_id: uuid.UUID,
+        success: bool,
+        reference: str | None,
+        failure_reason: str | None,
+        correlation_id: str,
     ) -> None:
         """Called by background worker."""
         handoff = await self.handoff_repo.get_handoff_for_update(handoff_id)
@@ -148,43 +155,43 @@ class HandoffService:
 
         # Might already be updated if worker retried
         if handoff.status != HandoffStatus.SENDING.value:
-             return
+            return
 
         now = datetime.datetime.now(datetime.UTC)
         handoff.attempt_count += 1
 
         if success:
-             HandoffStateMachine.validate_transition(handoff.status, HandoffStatus.SENT)
-             handoff.status = HandoffStatus.SENT.value
-             handoff.delivery_reference = reference
-             handoff.version += 1
-             handoff.updated_at = now
+            HandoffStateMachine.validate_transition(handoff.status, HandoffStatus.SENT)
+            handoff.status = HandoffStatus.SENT.value
+            handoff.delivery_reference = reference
+            handoff.version += 1
+            handoff.updated_at = now
 
-             await self.audit_repo.append(
-                 AuditLogORM(
-                     event_type=AuditEventType.HANDOFF_SENT.value,
-                     target_id=handoff.id,
-                     target_type="handoff",
-                     correlation_id=correlation_id,
-                     outcome="SUCCESS",
-                 )
-             )
+            await self.audit_repo.append(
+                AuditLogORM(
+                    event_type=AuditEventType.HANDOFF_SENT.value,
+                    target_id=handoff.id,
+                    target_type="handoff",
+                    correlation_id=correlation_id,
+                    outcome="SUCCESS",
+                )
+            )
         else:
-             HandoffStateMachine.validate_transition(handoff.status, HandoffStatus.DELIVERY_FAILED)
-             handoff.status = HandoffStatus.DELIVERY_FAILED.value
-             handoff.failure_reason = failure_reason
-             handoff.version += 1
-             handoff.updated_at = now
+            HandoffStateMachine.validate_transition(handoff.status, HandoffStatus.DELIVERY_FAILED)
+            handoff.status = HandoffStatus.DELIVERY_FAILED.value
+            handoff.failure_reason = failure_reason
+            handoff.version += 1
+            handoff.updated_at = now
 
-             await self.audit_repo.append(
-                 AuditLogORM(
-                     event_type=AuditEventType.HANDOFF_DELIVERY_FAILED.value,
-                     target_id=handoff.id,
-                     target_type="handoff",
-                     correlation_id=correlation_id,
-                     outcome="FAILURE",
-                 )
-             )
+            await self.audit_repo.append(
+                AuditLogORM(
+                    event_type=AuditEventType.HANDOFF_DELIVERY_FAILED.value,
+                    target_id=handoff.id,
+                    target_type="handoff",
+                    correlation_id=correlation_id,
+                    outcome="FAILURE",
+                )
+            )
 
     async def record_acknowledgement(
         self, handoff_id: uuid.UUID, reference: str, actor: UserContext, correlation_id: str
@@ -197,11 +204,11 @@ class HandoffService:
             raise NotFoundError("Handoff not found.")
 
         try:
-             HandoffStateMachine.validate_transition(handoff.status, HandoffStatus.ACKNOWLEDGED)
+            HandoffStateMachine.validate_transition(handoff.status, HandoffStatus.ACKNOWLEDGED)
         except InvalidTransitionError:
-             if handoff.status == HandoffStatus.ACKNOWLEDGED.value:
-                  return handoff
-             raise
+            if handoff.status == HandoffStatus.ACKNOWLEDGED.value:
+                return handoff
+            raise
 
         now = datetime.datetime.now(datetime.UTC)
         handoff.status = HandoffStatus.ACKNOWLEDGED.value
@@ -211,14 +218,14 @@ class HandoffService:
         handoff.updated_at = now
 
         await self.audit_repo.append(
-             AuditLogORM(
-                 event_type=AuditEventType.HANDOFF_ACKNOWLEDGED.value,
-                 actor_id=actor.id,
-                 target_id=handoff.id,
-                 target_type="handoff",
-                 correlation_id=correlation_id,
-                 outcome="SUCCESS",
-             )
+            AuditLogORM(
+                event_type=AuditEventType.HANDOFF_ACKNOWLEDGED.value,
+                actor_id=actor.id,
+                target_id=handoff.id,
+                target_type="handoff",
+                correlation_id=correlation_id,
+                outcome="SUCCESS",
+            )
         )
         return handoff
 
@@ -234,11 +241,11 @@ class HandoffService:
             raise NotFoundError("Handoff not found.")
 
         try:
-             HandoffStateMachine.validate_transition(handoff.status, HandoffStatus.COMPLETED)
+            HandoffStateMachine.validate_transition(handoff.status, HandoffStatus.COMPLETED)
         except InvalidTransitionError:
-             if handoff.status == HandoffStatus.COMPLETED.value:
-                  return handoff
-             raise
+            if handoff.status == HandoffStatus.COMPLETED.value:
+                return handoff
+            raise
 
         now = datetime.datetime.now(datetime.UTC)
         handoff.status = HandoffStatus.COMPLETED.value
@@ -246,13 +253,13 @@ class HandoffService:
         handoff.updated_at = now
 
         await self.audit_repo.append(
-             AuditLogORM(
-                 event_type=AuditEventType.HANDOFF_COMPLETED.value,
-                 actor_id=actor.id,
-                 target_id=handoff.id,
-                 target_type="handoff",
-                 correlation_id=correlation_id,
-                 outcome="SUCCESS",
-             )
+            AuditLogORM(
+                event_type=AuditEventType.HANDOFF_COMPLETED.value,
+                actor_id=actor.id,
+                target_id=handoff.id,
+                target_type="handoff",
+                correlation_id=correlation_id,
+                outcome="SUCCESS",
+            )
         )
         return handoff

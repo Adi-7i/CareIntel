@@ -4,10 +4,13 @@ Tasks API Router.
 
 import uuid
 from collections.abc import Sequence
+from typing import Annotated
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends
 
+from careintel.api.deps import CurrentUserDep, DbSessionDep, get_case_service
 from careintel.api.v1.tasks.schemas import AsyncTaskResponse
+from careintel.application.case.case_service import CaseService
 from careintel.application.workflow.task_service import AsyncTaskService
 from careintel.core.errors import NotFoundError
 from careintel.persistence.repositories.task_repo import AsyncTaskRepository
@@ -15,8 +18,7 @@ from careintel.persistence.repositories.task_repo import AsyncTaskRepository
 router = APIRouter(tags=["tasks"])
 
 
-def get_task_service(request: Request) -> AsyncTaskService:
-    session = request.state.db_session
+def get_task_service(session: DbSessionDep) -> AsyncTaskService:
     repo = AsyncTaskRepository(session)
     return AsyncTaskService(repo)
 
@@ -28,16 +30,16 @@ def get_task_service(request: Request) -> AsyncTaskService:
 )
 async def get_task(
     task_id: uuid.UUID,
-    request: Request,
-    task_service: AsyncTaskService = Depends(get_task_service),
+    actor: CurrentUserDep,
+    case_service: Annotated[CaseService, Depends(get_case_service)],
+    task_service: Annotated[AsyncTaskService, Depends(get_task_service)],
 ) -> AsyncTaskResponse:
     """Retrieve the status and metadata for a specific task."""
-    # Authorization could be added here, though tasks are generally non-sensitive metadata.
-    # A robust check would look at task.case_id and verify case read access.
-    # For Phase 8 skeleton, we return the task.
     task = await task_service.get_task(task_id)
     if not task:
         raise NotFoundError("Task not found")
+
+    await case_service.get_case(task.case_id, actor)
 
     return AsyncTaskResponse.model_validate(task)
 
@@ -49,13 +51,11 @@ async def get_task(
 )
 async def list_case_tasks(
     case_id: uuid.UUID,
-    request: Request,
-    task_service: AsyncTaskService = Depends(get_task_service),
+    actor: CurrentUserDep,
+    case_service: Annotated[CaseService, Depends(get_case_service)],
+    task_service: Annotated[AsyncTaskService, Depends(get_task_service)],
 ) -> Sequence[AsyncTaskResponse]:
     """Retrieve all tasks associated with a case."""
-    # We use the repo directly for the list operation to bypass domain loading if we want,
-    # or we can add `list_for_case` to the service. Let's use repo here.
-    session = request.state.db_session
-    repo = AsyncTaskRepository(session)
-    orms = await repo.list_for_case(case_id)
-    return [AsyncTaskResponse.model_validate(orm) for orm in orms]
+    await case_service.get_case(case_id, actor)
+    tasks = await task_service.list_for_case(case_id)
+    return [AsyncTaskResponse.model_validate(task) for task in tasks]

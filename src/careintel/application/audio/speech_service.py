@@ -46,18 +46,19 @@ class SpeechService:
         """
         if len(text) > self.MAX_TEXT_LENGTH:
             from careintel.core.errors import ValidationError
+
             raise ValidationError(
                 message=f"Text length exceeds maximum allowed ({self.MAX_TEXT_LENGTH} chars)"
             )
 
         if not text.strip():
             from careintel.core.errors import ValidationError
-            raise ValidationError(
-                message="Text cannot be empty"
-            )
+
+            raise ValidationError(message="Text cannot be empty")
 
         self.logger.info(
-            f"Synthesizing speech for user {user.id}, length {len(text)}, voice {voice}"
+            "Synthesizing speech",
+            extra={"text_length": len(text), "voice": voice},
         )
 
         try:
@@ -74,12 +75,12 @@ class SpeechService:
                     "text_length": len(text),
                     "provider": result.provider,
                     "voice": result.voice,
-                }
+                },
             )
 
             return result
 
-        except Exception as e:
+        except Exception as exc:
             # Audit failure
             await self._audit_event(
                 event_type=AuditEventType.PROCESSING_FAILED,
@@ -89,10 +90,13 @@ class SpeechService:
                 outcome="FAILED",
                 detail={
                     "text_length": len(text),
-                    "error": str(e),
-                }
+                    "error_type": type(exc).__name__,
+                },
             )
-            self.logger.error(f"TTS Synthesis failed: {e}")
+            self.logger.error(
+                "TTS synthesis failed",
+                extra={"error_type": type(exc).__name__},
+            )
             raise
 
     async def _audit_event(

@@ -40,7 +40,10 @@ class AzureSpeechProvider(SpeechProvider):
         self._provider_version = f"azure-openai-{deployment}-{mode}-v1"
 
     def _build_url(self) -> str:
-        return f"{self._endpoint}/openai/deployments/{self._deployment}/audio/transcriptions?api-version={self._api_version}"
+        return (
+            f"{self._endpoint}/openai/deployments/{self._deployment}"
+            f"/audio/transcriptions?api-version={self._api_version}"
+        )
 
     async def process_audio(self, file_path: str, run_id: str) -> SpeechResult:
         run_uuid = uuid.UUID(run_id)
@@ -59,7 +62,11 @@ class AzureSpeechProvider(SpeechProvider):
             with open(file_path, "rb") as f:
                 filename = os.path.basename(file_path)
                 files = {
-                    "file": (filename, f, "audio/mpeg") # Will adapt based on actual file, but basic mpeg is fine for fallback
+                    "file": (
+                        filename,
+                        f,
+                        "audio/mpeg",
+                    )  # Will adapt based on actual file, but basic mpeg is fine for fallback
                 }
                 response = await client.post(url, headers=headers, data=data, files=files)
 
@@ -115,6 +122,7 @@ class AzureSpeechProvider(SpeechProvider):
             segments=domain_segments,
             provider_version=self._provider_version,
         )
+
 
 # Verify Protocol compliance
 def _check_protocol() -> None:

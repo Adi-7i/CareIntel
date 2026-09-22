@@ -22,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from careintel.application.audio.speech_service import SpeechService
 from careintel.application.auth.auth_service import AuthService
+from careintel.application.auth.consent_service import ConsentService
 from careintel.application.auth.password_hasher import PasswordHasher
 from careintel.application.auth.permission_service import PermissionService
 from careintel.application.auth.token_service import JWTService
@@ -47,6 +48,7 @@ from careintel.persistence.repositories.audit_repo import AuditRepository
 from careintel.persistence.repositories.case_history_repo import CaseHistoryRepository
 from careintel.persistence.repositories.case_outbox_repo import CaseOutboxRepository
 from careintel.persistence.repositories.case_repo import CaseRepository
+from careintel.persistence.repositories.consent_repo import ConsentRepository
 from careintel.persistence.repositories.evidence_history_repo import EvidenceHistoryRepository
 from careintel.persistence.repositories.evidence_outbox_repo import EvidenceOutboxRepository
 from careintel.persistence.repositories.evidence_repo import EvidenceRepository
@@ -90,10 +92,6 @@ DbSessionDep = Annotated[AsyncSession, Depends(_db_session_provider)]
 
 
 # ── Authentication & Authorization ─────────────────────────────────────────────
-
-
-from careintel.application.auth.consent_service import ConsentService
-from careintel.persistence.repositories.consent_repo import ConsentRepository
 
 
 def get_consent_service(session: DbSessionDep) -> ConsentService:
@@ -205,6 +203,7 @@ def get_evidence_service(
     """Construct EvidenceService with all required repositories."""
     return EvidenceService(
         case_repo=CaseRepository(session),
+        consent_repo=ConsentRepository(session),
         evidence_repo=EvidenceRepository(session),
         text_repo=TextContentRepository(session),
         history_repo=EvidenceHistoryRepository(session),
@@ -291,6 +290,7 @@ def get_processing_service(
 
     from careintel.application.workflow.task_service import AsyncTaskService
     from careintel.persistence.repositories.task_repo import AsyncTaskRepository
+
     task_service = AsyncTaskService(AsyncTaskRepository(session))
 
     return ProcessingService(
@@ -300,12 +300,12 @@ def get_processing_service(
         extraction_processor=ext_processor,
         task_service=task_service,
         evidence_repo=evidence_repo,
+        case_repo=CaseRepository(session),
         outbox_repo=outbox_repo,
     )
 
 
 # ── Speech / TTS Services ──────────────────────────────────────────────────────
-
 
 
 def get_speech_service(

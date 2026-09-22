@@ -106,9 +106,7 @@ class PolicyService:
         else:
             self._rules = rules
 
-    def evaluate_draft(
-        self, draft: AIDraft, context: SafeContext
-    ) -> list[PolicyDecision]:
+    def evaluate_draft(self, draft: AIDraft, context: SafeContext) -> list[PolicyDecision]:
         """
         Run all registered rules against the draft.
 

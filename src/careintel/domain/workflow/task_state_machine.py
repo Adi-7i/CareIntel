@@ -13,27 +13,31 @@ class TaskStateMachine:
     Deterministic domain state machine for async tasks.
     """
 
-    TERMINAL_STATES = frozenset({
-        AsyncTaskStatus.SUCCEEDED,
-        AsyncTaskStatus.FAILED,
-        AsyncTaskStatus.CANCELLED
-    })
+    TERMINAL_STATES = frozenset(
+        {AsyncTaskStatus.SUCCEEDED, AsyncTaskStatus.FAILED, AsyncTaskStatus.CANCELLED}
+    )
 
     _VALID_TRANSITIONS: ClassVar[dict[AsyncTaskStatus, frozenset[AsyncTaskStatus]]] = {
-        AsyncTaskStatus.PENDING: frozenset({
-            AsyncTaskStatus.QUEUED,
-            AsyncTaskStatus.CANCELLED,
-        }),
-        AsyncTaskStatus.QUEUED: frozenset({
-            AsyncTaskStatus.RUNNING,
-            AsyncTaskStatus.PENDING,  # E.g. recovery from queue failure
-            AsyncTaskStatus.CANCELLED,
-        }),
-        AsyncTaskStatus.RUNNING: frozenset({
-            AsyncTaskStatus.SUCCEEDED,
-            AsyncTaskStatus.FAILED,
-            AsyncTaskStatus.PENDING,  # Stale task recovery -> sweep resets to PENDING
-        }),
+        AsyncTaskStatus.PENDING: frozenset(
+            {
+                AsyncTaskStatus.QUEUED,
+                AsyncTaskStatus.CANCELLED,
+            }
+        ),
+        AsyncTaskStatus.QUEUED: frozenset(
+            {
+                AsyncTaskStatus.RUNNING,
+                AsyncTaskStatus.PENDING,  # E.g. recovery from queue failure
+                AsyncTaskStatus.CANCELLED,
+            }
+        ),
+        AsyncTaskStatus.RUNNING: frozenset(
+            {
+                AsyncTaskStatus.SUCCEEDED,
+                AsyncTaskStatus.FAILED,
+                AsyncTaskStatus.PENDING,  # Stale task recovery -> sweep resets to PENDING
+            }
+        ),
         AsyncTaskStatus.SUCCEEDED: frozenset(),
         AsyncTaskStatus.FAILED: frozenset(),
         AsyncTaskStatus.CANCELLED: frozenset(),

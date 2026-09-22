@@ -80,11 +80,11 @@ The repository is aimed at engineers exploring or building reviewer-led healthca
 | Structuring | Temporal normalization, conflict detection, missing-information evaluation, question generation, and persisted records | **Partial API** |
 | Retrieval | Dense pgvector and sparse PostgreSQL FTS search, RRF fusion, reranker port, run/candidate audit records | **Internal service** |
 | AI assistance | Azure OpenAI structured-output adapter, demo LLM, draft persistence, provenance policy, approval/rejection service methods | **Internal service** |
-| Review and handoff | State machines, ORM models, repositories, and application services exist; current HTTP handlers largely return placeholder payloads | **Scaffolded API** |
+| Review and handoff | State machines, ORM models, repositories, and application services exist; incomplete HTTP handlers return explicit `501 NOT_IMPLEMENTED` responses | **Scaffolded API** |
 | Async execution | Outbox dispatcher, Celery routing, durable task states, retries, heartbeats, and stale-task recovery | **Partial** |
-| Audit and tracing | Audit log model, ULID correlation IDs, response propagation, structured JSON logging, sensitive-field redaction | **Implemented** |
+| Audit and tracing | Application append-only audit repository, ULID correlation IDs, response propagation, structured JSON logging, and sensitive-field redaction; database-level mutation prevention is not enforced | **Partial** |
 
-> **What “partial” means here:** the design and service code exist, but the public or background execution path is not fully wired end to end. In particular, the current processing, retrieval, AI, and workflow Celery task bodies simulate work before marking task state, and several review/handoff routes return static responses.
+> **What “partial” means here:** the design and service code exist, but the public or background execution path is not fully wired end to end. The current processing, retrieval, AI, and workflow Celery task bodies persist an explicit failed task state rather than reporting synthetic success, and incomplete structuring/review/handoff routes fail explicitly with `501`.
 
 ---
 
@@ -109,7 +109,7 @@ The repository is aimed at engineers exploring or building reviewer-led healthca
 | **Quality** | pytest · pytest-asyncio · HTTPX · Ruff · mypy | Unit/API/integration testing, formatting, linting, and strict typing configuration |
 | **Packaging** | uv · Hatchling | Locked dependency workflow and package builds |
 
-Provider selection is configuration-driven. The application composition root selects Azure adapters only when the relevant provider setting and credentials are present; otherwise it uses demo or in-memory implementations.
+Provider selection is configuration-driven. Development and test environments may use demo or in-memory implementations. Production configuration fails closed unless the wired LLM, embedding, OCR, STT, and TTS capabilities select fully configured external adapters.
 
 ---
 
@@ -366,9 +366,9 @@ These controls are not a claim of comprehensive model safety or prompt-injection
 | Secret handling | Pydantic `SecretStr`, environment-driven configuration, masked database URLs |
 | Logs and errors | JSON logging, sensitive-field redaction, no request-body logging, normalized error envelope |
 | Traceability | `X-Correlation-ID` propagation plus audit and state-history records |
-| Production guards | Debug/SQL echo rejection and required Redis/Azure storage configuration in production mode |
+| Production guards | Debug/SQL echo rejection, required Redis/Azure storage, and fail-closed external provider configuration in production mode |
 
-Two boundaries matter today: the facility-role mapping is not loaded into the request user context, so facility scoping should be considered incomplete; and the default scanner is a no-op that never declares file content clean.
+Two boundaries matter today: comprehensive cross-object authorization coverage has not been demonstrated for every later-phase resource, and the default scanner is a no-op that never declares file content clean. Facility-role mappings are loaded into the request context and a missing mapping no longer grants facility access.
 
 No compliance certification is claimed by this repository.
 
@@ -389,7 +389,7 @@ All routes are versioned below `/api/v1`. Interactive documentation is generated
 | Tasks | `GET /tasks/{id}` · `GET /cases/{id}/tasks` | Inspect task state and list case tasks |
 | Audio | `POST /audio/speech` | Return synthesized audio from the configured TTS provider |
 
-The generated OpenAPI document also exposes structuring, review, escalation, and handoff routes. They are intentionally omitted from the table above because several currently return stub or static payloads rather than complete persisted workflows.
+The generated OpenAPI document also exposes structuring, review, escalation, and handoff routes. They are intentionally omitted from the table above because incomplete handlers return `501 NOT_IMPLEMENTED` rather than complete persisted workflows.
 
 ### Error contract
 
@@ -431,7 +431,7 @@ uv sync --all-extras
 cp .env.example .env
 ```
 
-At minimum, set all three required secrets/DSNs; `JWT_SECRET_KEY` is required by the settings model even though the current example file does not include it.
+At minimum, set all three required secrets/DSNs shown below. `.env.example` contains every JWT field and provider deployment/version field without real values.
 
 ```dotenv
 DATABASE_URL=postgresql+asyncpg://USER:PASSWORD@HOST:5432/DBNAME
@@ -565,9 +565,9 @@ uv run pytest
 uv run pytest tests/integration/ -m integration -v
 
 # Formatting, linting, and strict type checking
-uv run ruff format --check .
-uv run ruff check .
-uv run mypy
+uv run ruff format --check src/careintel tests scripts
+uv run ruff check src/careintel tests scripts
+uv run mypy src/careintel
 ```
 
 The repository has unit, API, infrastructure, integration, and synthetic end-to-end test modules. No CI workflow is tracked in the current tree, so this README intentionally shows no build, coverage, or deployment-status badge.
@@ -581,9 +581,9 @@ CareIntel is best read as a substantial architecture prototype, not a production
 - **API-backed now:** health, authentication, consent, case management, evidence intake/download, TTS, processing-task submission, and task inspection.
 - **Implemented internally:** multimodal processing services, structuring logic, hybrid retrieval, AI draft/policy services, review/handoff domain and persistence layers.
 - **Not end-to-end yet:** real content scanning, complete worker-to-service execution, public knowledge/retrieval/AI APIs, and persisted behavior behind several review/escalation/handoff routes.
-- **External operation unproven by source alone:** live PostgreSQL, Redis, Azure Blob, Azure OpenAI, and Document Intelligence require operator-provided services and credentials.
+- **Environment-specific release evidence:** [`RELEASE_EVIDENCE.md`](RELEASE_EVIDENCE.md) records the external checks actually executed on the configured environment; it must not be generalized to another deployment.
 
-There is currently no repository license file, release workflow, deployment manifest, or container configuration; no claim is made for any of them.
+There is currently no repository license file, release workflow, or deployment manifest. Docker is deliberately excluded from this release scope.
 
 ---
 
@@ -604,4 +604,3 @@ Built as a backend architecture study for auditable, reviewer-led healthcare inf
     alt="Crimson and black footer wave"
   />
 </p>
-

@@ -24,10 +24,20 @@ def test_provenance_integrity_rule_passes() -> None:
         output_schema={},
         policy_constraints=[],
         knowledge_passages=[
-            ContextPassage(content="fact 1", origin=ContentOrigin.KNOWLEDGE, source_id=valid_id1, citation_locator=None)
+            ContextPassage(
+                content="fact 1",
+                origin=ContentOrigin.KNOWLEDGE,
+                source_id=valid_id1,
+                citation_locator=None,
+            )
         ],
         patient_evidence=[
-            ContextPassage(content="fact 2", origin=ContentOrigin.PATIENT_TEXT, source_id=valid_id2, citation_locator=None)
+            ContextPassage(
+                content="fact 2",
+                origin=ContentOrigin.PATIENT_TEXT,
+                source_id=valid_id2,
+                citation_locator=None,
+            )
         ],
         stt_transcripts=[],
         ocr_content=[],
@@ -46,7 +56,9 @@ def test_provenance_integrity_rule_passes() -> None:
         validation_status=ValidationStatus.ACCEPTED,
         validation_errors=[],
         claim_provenance=[
-            ClaimProvenance(claim_text="xyz", status="SUPPORTED", supporting_source_ids=[valid_id1, valid_id2])
+            ClaimProvenance(
+                claim_text="xyz", status="SUPPORTED", supporting_source_ids=[valid_id1, valid_id2]
+            )
         ],
         reviewer_status=DraftReviewerStatus.DRAFT,
         reviewer_id=None,
@@ -71,7 +83,12 @@ def test_provenance_integrity_rule_fails() -> None:
         output_schema={},
         policy_constraints=[],
         knowledge_passages=[
-            ContextPassage(content="fact 1", origin=ContentOrigin.KNOWLEDGE, source_id=valid_id1, citation_locator=None)
+            ContextPassage(
+                content="fact 1",
+                origin=ContentOrigin.KNOWLEDGE,
+                source_id=valid_id1,
+                citation_locator=None,
+            )
         ],
         patient_evidence=[],
         stt_transcripts=[],
@@ -90,7 +107,9 @@ def test_provenance_integrity_rule_fails() -> None:
         validation_status=ValidationStatus.ACCEPTED,
         validation_errors=[],
         claim_provenance=[
-            ClaimProvenance(claim_text="xyz", status="SUPPORTED", supporting_source_ids=[valid_id1, invalid_id])
+            ClaimProvenance(
+                claim_text="xyz", status="SUPPORTED", supporting_source_ids=[valid_id1, invalid_id]
+            )
         ],
         reviewer_status=DraftReviewerStatus.DRAFT,
         reviewer_id=None,

@@ -5,6 +5,7 @@ Async Task Repository.
 import datetime
 import uuid
 from collections.abc import Sequence
+from typing import Any
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -31,7 +32,11 @@ class AsyncTaskRepository:
 
     async def list_for_case(self, case_id: uuid.UUID) -> Sequence[AsyncTaskORM]:
         """List tasks associated with a case."""
-        stmt = select(AsyncTaskORM).where(AsyncTaskORM.case_id == case_id).order_by(AsyncTaskORM.created_at.desc())
+        stmt = (
+            select(AsyncTaskORM)
+            .where(AsyncTaskORM.case_id == case_id)
+            .order_by(AsyncTaskORM.created_at.desc())
+        )
         result = await self.session.execute(stmt)
         return result.scalars().all()
 
@@ -44,7 +49,7 @@ class AsyncTaskRepository:
     async def update_status(self, task_id: uuid.UUID, status: AsyncTaskStatus) -> None:
         """Update the status of a task."""
         now = datetime.datetime.now(datetime.UTC)
-        updates = {"status": status.value}
+        updates: dict[str, Any] = {"status": status.value}
 
         if status == AsyncTaskStatus.QUEUED:
             updates["queued_at"] = now
@@ -52,7 +57,11 @@ class AsyncTaskRepository:
             # First time transition to running sets started_at
             # Subsequent (retry) just updates heartbeat
             updates["heartbeat_at"] = now
-        elif status in (AsyncTaskStatus.SUCCEEDED, AsyncTaskStatus.FAILED, AsyncTaskStatus.CANCELLED):
+        elif status in (
+            AsyncTaskStatus.SUCCEEDED,
+            AsyncTaskStatus.FAILED,
+            AsyncTaskStatus.CANCELLED,
+        ):
             updates["completed_at"] = now
 
         stmt = update(AsyncTaskORM).where(AsyncTaskORM.id == task_id).values(**updates)
@@ -73,7 +82,7 @@ class AsyncTaskRepository:
         """Find tasks that have been RUNNING but haven't updated heartbeat since threshold."""
         stmt = select(AsyncTaskORM).where(
             AsyncTaskORM.status == AsyncTaskStatus.RUNNING.value,
-            (AsyncTaskORM.heartbeat_at < stale_threshold) | (AsyncTaskORM.heartbeat_at.is_(None))
+            (AsyncTaskORM.heartbeat_at < stale_threshold) | (AsyncTaskORM.heartbeat_at.is_(None)),
         )
         result = await self.session.execute(stmt)
         return result.scalars().all()

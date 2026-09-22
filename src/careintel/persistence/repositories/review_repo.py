@@ -37,7 +37,11 @@ class ReviewRepository:
         Get queue item with pessimistic lock.
         If expected_version is provided, uses optimistic concurrency control as well.
         """
-        stmt = select(ReviewQueueItemORM).where(ReviewQueueItemORM.case_id == case_id).with_for_update()
+        stmt = (
+            select(ReviewQueueItemORM)
+            .where(ReviewQueueItemORM.case_id == case_id)
+            .with_for_update()
+        )
         if expected_version is not None:
             stmt = stmt.where(ReviewQueueItemORM.version == expected_version)
         result = await self.session.execute(stmt)
@@ -65,10 +69,13 @@ class ReviewRepository:
         if assigned_to:
             stmt = stmt.where(ReviewQueueItemORM.assigned_reviewer_id == assigned_to)
 
-        stmt = stmt.order_by(
-            ReviewQueueItemORM.priority_bucket.desc(),
-            ReviewQueueItemORM.entered_queue_at.asc()
-        ).limit(limit).offset(offset)
+        stmt = (
+            stmt.order_by(
+                ReviewQueueItemORM.priority_bucket.desc(), ReviewQueueItemORM.entered_queue_at.asc()
+            )
+            .limit(limit)
+            .offset(offset)
+        )
 
         result = await self.session.execute(stmt)
         return result.scalars().all()
@@ -114,8 +121,7 @@ class ReviewRepository:
 
     async def get_active_note_for_case(self, case_id: uuid.UUID) -> ReviewerNoteORM | None:
         stmt = select(ReviewerNoteORM).where(
-            ReviewerNoteORM.case_id == case_id,
-            ReviewerNoteORM.superseded_by.is_(None)
+            ReviewerNoteORM.case_id == case_id, ReviewerNoteORM.superseded_by.is_(None)
         )
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()

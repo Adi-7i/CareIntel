@@ -120,4 +120,3 @@ class AuditEventType(StrEnum):
     # Consent (Phase 9)
     REFERRAL_CONSENT_DENIED = "referral_consent_denied"
     HANDOFF_CONSENT_DENIED = "handoff_consent_denied"
-

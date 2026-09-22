@@ -276,10 +276,7 @@ class KnowledgeService:
             # Write the actual vector via raw pgvector SQL
             vector_str = "[" + ",".join(str(v) for v in embed_result.vector) + "]"
             await self._session.execute(
-                text(
-                    "UPDATE chunk_embeddings SET embedding = :vec::vector "
-                    "WHERE id = :eid"
-                ),
+                text("UPDATE chunk_embeddings SET embedding = :vec::vector WHERE id = :eid"),
                 {"vec": vector_str, "eid": embed_orm.id},
             )
             created += 1
@@ -289,9 +286,7 @@ class KnowledgeService:
 
     # ── Publication ───────────────────────────────────────────────────────────
 
-    async def publish_source(
-        self, actor: UserContext, source_id: uuid.UUID
-    ) -> None:
+    async def publish_source(self, actor: UserContext, source_id: uuid.UUID) -> None:
         """
         Transition a DRAFT source to PUBLISHED status.
 
@@ -317,9 +312,7 @@ class KnowledgeService:
             detail={"source_id": str(source_id)},
         )
 
-    async def retire_source(
-        self, actor: UserContext, source_id: uuid.UUID
-    ) -> None:
+    async def retire_source(self, actor: UserContext, source_id: uuid.UUID) -> None:
         """
         Retire a knowledge source. Historical records are preserved.
 

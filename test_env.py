@@ -1,9 +1,8 @@
-from dotenv import load_dotenv
-load_dotenv()
-from careintel.core.config import get_settings
-settings = get_settings()
-print("REDIS_URL:", settings.redis_url)
-print("CELERY_BROKER:", settings.celery_broker_url)
+"""Secret-safe local configuration presence check."""
 
-from careintel.workers.celery_app import celery_app
-print("APP BROKER:", celery_app.conf.broker_url)
+from careintel.core.config import get_settings
+
+if __name__ == "__main__":
+    settings = get_settings()
+    print(f"redis_configured: {settings.redis_url is not None}")
+    print(f"celery_fallback_configured: {settings.celery_broker_url is not None}")

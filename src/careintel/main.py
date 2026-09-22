@@ -53,7 +53,6 @@ def create_app() -> FastAPI:
             "CareIntel starting up",
             extra={
                 "env": settings.app_env.value,
-                "database": settings.database_url_safe(),
             },
         )
 
@@ -82,18 +81,22 @@ def create_app() -> FastAPI:
         # ── LLM Provider ──────────────────────────────────────────────────────────
         if settings.llm_provider == "azure_openai" and settings.azure_openai_api_key:
             from careintel.infrastructure.ai.azure_openai_adapter import AzureOpenAIAdapter
+
             _app.state.llm_provider = AzureOpenAIAdapter(
                 endpoint=settings.azure_openai_endpoint,
                 api_key=settings.azure_openai_api_key.get_secret_value(),
                 deployment=settings.azure_llm_deployment,
+                api_version=settings.azure_llm_api_version,
             )
         else:
             from careintel.infrastructure.ai.demo_adapter import DemoLLMProvider
+
             _app.state.llm_provider = DemoLLMProvider()
 
         # ── Embedding Provider ────────────────────────────────────────────────────
         if settings.embedding_provider == "azure_openai" and settings.azure_openai_api_key:
             from careintel.infrastructure.embedding.azure_provider import AzureEmbeddingProvider
+
             _app.state.embedding_provider = AzureEmbeddingProvider(
                 endpoint=settings.azure_openai_endpoint,
                 api_key=settings.azure_openai_api_key.get_secret_value(),
@@ -101,15 +104,29 @@ def create_app() -> FastAPI:
             )
         else:
             from careintel.infrastructure.embedding.demo_provider import DemoEmbeddingProvider
+
             _app.state.embedding_provider = DemoEmbeddingProvider()
 
         # ── STT Provider ──────────────────────────────────────────────────────────
-        if settings.stt_provider in ("azure_openai_transcribe", "azure_openai_diarize") and settings.azure_openai_api_key:
+        if (
+            settings.stt_provider in ("azure_openai_transcribe", "azure_openai_diarize")
+            and settings.azure_openai_api_key
+        ):
             from careintel.infrastructure.stt.azure_provider import AzureSpeechProvider
+
             mode = "diarize" if settings.stt_provider == "azure_openai_diarize" else "transcribe"
-            deployment = settings.azure_stt_diarize_deployment if mode == "diarize" else settings.azure_stt_deployment
-            api_version = settings.azure_stt_diarize_api_version if mode == "diarize" else settings.azure_stt_api_version
-            from typing import cast, Literal
+            deployment = (
+                settings.azure_stt_diarize_deployment
+                if mode == "diarize"
+                else settings.azure_stt_deployment
+            )
+            api_version = (
+                settings.azure_stt_diarize_api_version
+                if mode == "diarize"
+                else settings.azure_stt_api_version
+            )
+            from typing import Literal, cast
+
             _app.state.speech_provider = AzureSpeechProvider(
                 endpoint=settings.azure_openai_endpoint,
                 api_key=settings.azure_openai_api_key.get_secret_value(),
@@ -123,6 +140,7 @@ def create_app() -> FastAPI:
         # ── TTS Provider ──────────────────────────────────────────────────────────
         if settings.tts_provider == "azure_openai" and settings.azure_openai_api_key:
             from careintel.infrastructure.tts.azure_provider import AzureTTSProvider
+
             _app.state.tts_provider = AzureTTSProvider(
                 endpoint=settings.azure_openai_endpoint,
                 api_key=settings.azure_openai_api_key.get_secret_value(),
@@ -132,13 +150,19 @@ def create_app() -> FastAPI:
             )
         else:
             from careintel.infrastructure.tts.demo_provider import DemoTTSProvider
+
             _app.state.tts_provider = DemoTTSProvider()
 
         # ── OCR Provider ──────────────────────────────────────────────────────────
-        if settings.ocr_provider == "azure_document_intelligence" and settings.azure_document_intelligence_endpoint and settings.azure_document_intelligence_key:
+        if (
+            settings.ocr_provider == "azure_document_intelligence"
+            and settings.azure_document_intelligence_endpoint
+            and settings.azure_document_intelligence_key
+        ):
             from careintel.infrastructure.ocr.azure_provider import (
                 AzureDocumentIntelligenceProvider,
             )
+
             _app.state.ocr_provider = AzureDocumentIntelligenceProvider(
                 endpoint=settings.azure_document_intelligence_endpoint,
                 key=settings.azure_document_intelligence_key.get_secret_value(),
@@ -153,12 +177,14 @@ def create_app() -> FastAPI:
         _app.state.extraction_provider = DemoExtractionProvider()
 
         logger.info("CareIntel startup complete — ready to serve traffic")
-        yield
-
-        # ── Shutdown ─────────────────────────────────────────────────────────
-        logger.info("CareIntel shutting down — disposing resources")
-        await dispose_engine(engine)
-        logger.info("CareIntel shutdown complete")
+        try:
+            yield
+        finally:
+            # ── Shutdown ─────────────────────────────────────────────────────
+            logger.info("CareIntel shutting down — disposing resources")
+            await _app.state.blob_provider.close()
+            await dispose_engine(engine)
+            logger.info("CareIntel shutdown complete")
 
     # ── Application instance ───────────────────────────────────────────────
     app = FastAPI(
@@ -196,7 +222,7 @@ def create_app() -> FastAPI:
     # ── Routers ────────────────────────────────────────────────────────────
     app.include_router(v1_router)
 
-    logger.info("CareIntel application configured", extra={"routes": len(app.routes)})
+    logger.info("CareIntel application configured")
     return app
 
 

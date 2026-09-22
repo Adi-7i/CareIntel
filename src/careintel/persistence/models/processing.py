@@ -12,10 +12,10 @@ from sqlalchemy import Float, ForeignKey, Index, Integer, String, Text, UniqueCo
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
-from careintel.persistence.base import Base
+from careintel.persistence.base import Base, TimestampMixin
 
 
-class ProcessingRunORM(Base):
+class ProcessingRunORM(Base, TimestampMixin):
     __tablename__ = "processing_runs"
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -48,7 +48,7 @@ class ProcessingRunORM(Base):
 # ── OCR ────────────────────────────────────────────────────────────────────
 
 
-class OcrPageORM(Base):
+class OcrPageORM(Base, TimestampMixin):
     __tablename__ = "ocr_pages"
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -74,7 +74,7 @@ class OcrPageORM(Base):
     )
 
 
-class OcrRegionORM(Base):
+class OcrRegionORM(Base, TimestampMixin):
     __tablename__ = "ocr_regions"
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -96,7 +96,7 @@ class OcrRegionORM(Base):
     __table_args__ = (Index("ix_ocr_region_page", "page_id"),)
 
 
-class OcrTableCandidateORM(Base):
+class OcrTableCandidateORM(Base, TimestampMixin):
     __tablename__ = "ocr_table_candidates"
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -118,7 +118,7 @@ class OcrTableCandidateORM(Base):
 # ── Audio / STT ────────────────────────────────────────────────────────────
 
 
-class TranscriptRunORM(Base):
+class TranscriptRunORM(Base, TimestampMixin):
     __tablename__ = "transcript_runs"
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -135,7 +135,7 @@ class TranscriptRunORM(Base):
     provider_version: Mapped[str] = mapped_column(String, nullable=False)
 
 
-class TranscriptSegmentORM(Base):
+class TranscriptSegmentORM(Base, TimestampMixin):
     __tablename__ = "transcript_segments"
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -162,7 +162,7 @@ class TranscriptSegmentORM(Base):
 # ── Language & Translation ─────────────────────────────────────────────────
 
 
-class LanguageResultORM(Base):
+class LanguageResultORM(Base, TimestampMixin):
     __tablename__ = "language_results"
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -186,7 +186,7 @@ class LanguageResultORM(Base):
 # ── Structured Extraction ──────────────────────────────────────────────────
 
 
-class ExtractionRunORM(Base):
+class ExtractionRunORM(Base, TimestampMixin):
     __tablename__ = "extraction_runs"
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -203,7 +203,7 @@ class ExtractionRunORM(Base):
     provider_version: Mapped[str] = mapped_column(String, nullable=False)
 
 
-class ExtractedCandidateORM(Base):
+class ExtractedCandidateORM(Base, TimestampMixin):
     __tablename__ = "extracted_candidates"
 
     id: Mapped[uuid.UUID] = mapped_column(

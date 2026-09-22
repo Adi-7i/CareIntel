@@ -39,10 +39,7 @@ class AzureEmbeddingProvider:
         """
         Compute an embedding for a single string.
         """
-        response = await self._client.embeddings.create(
-            input=[text],
-            model=self._deployment
-        )
+        response = await self._client.embeddings.create(input=[text], model=self._deployment)
         vector = response.data[0].embedding
         return EmbeddingResult(
             vector=vector,
@@ -59,13 +56,10 @@ class AzureEmbeddingProvider:
         if not texts:
             return []
 
-        response = await self._client.embeddings.create(
-            input=texts,
-            model=self._deployment
-        )
+        response = await self._client.embeddings.create(input=texts, model=self._deployment)
 
         results = []
-        for i, data in enumerate(response.data):
+        for data in response.data:
             vector = data.embedding
             results.append(
                 EmbeddingResult(
@@ -77,6 +71,7 @@ class AzureEmbeddingProvider:
                 )
             )
         return results
+
 
 # Verify Protocol compliance at import time (type-checker aid)
 def _check_protocol() -> None:

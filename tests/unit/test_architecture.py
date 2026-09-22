@@ -125,6 +125,21 @@ class TestArchitectureBoundaries:
             "Docker is deferred to the final hardening phase."
         )
 
+    def test_placeholder_workers_do_not_mark_tasks_succeeded(self) -> None:
+        """Unwired workers must fail explicitly instead of reporting business success."""
+        workers = SRC_ROOT / "workers"
+        violations: list[str] = []
+        for name in (
+            "processing_tasks.py",
+            "retrieval_tasks.py",
+            "ai_tasks.py",
+            "workflow_tasks.py",
+        ):
+            source = (workers / name).read_text(encoding="utf-8")
+            if "transition_status(task_id, AsyncTaskStatus.SUCCEEDED)" in source:
+                violations.append(name)
+        assert not violations, f"Placeholder workers report false success: {violations}"
+
     def test_core_config_does_not_import_fastapi(self) -> None:
         """Core config must not depend on FastAPI."""
         config_file = SRC_ROOT / "core" / "config.py"

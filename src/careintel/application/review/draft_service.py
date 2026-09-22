@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import datetime
 import uuid
-from typing import Any
+from typing import Any, ClassVar
 
 from careintel.core.errors import AuthorizationError, InvalidTransitionError, NotFoundError
 from careintel.domain.ai.status import DraftReviewerStatus
@@ -36,12 +36,14 @@ class DraftReviewService:
     # and Phase 7 created AIDraftORM.
     async def _get_draft(self, draft_id: uuid.UUID) -> Any:
         """Mock method for getting draft."""
+
         class MockDraft:
             id = draft_id
             reviewer_status = DraftReviewerStatus.DRAFT.value
-            content_json = {"mock": "content"}
+            content_json: ClassVar[dict[str, str]] = {"mock": "content"}
             reviewer_id = None
             reviewed_at = None
+
         return MockDraft()
 
     async def accept_draft(
@@ -67,7 +69,7 @@ class DraftReviewService:
             draft_id=draft_id,
             editor_id=actor.id,
             original_content_json=draft.content_json,
-            edited_content_json=draft.content_json, # Unchanged
+            edited_content_json=draft.content_json,  # Unchanged
             content_origin="HUMAN_APPROVED",
             correlation_id=correlation_id,
         )
@@ -115,7 +117,12 @@ class DraftReviewService:
         )
 
     async def edit_draft(
-        self, draft_id: uuid.UUID, edited_content: dict, rationale: str | None, actor: UserContext, correlation_id: str
+        self,
+        draft_id: uuid.UUID,
+        edited_content: dict[str, Any],
+        rationale: str | None,
+        actor: UserContext,
+        correlation_id: str,
     ) -> None:
         """Edit a draft. Does NOT overwrite original AI content_json."""
         if not AuthorizationPolicy.evaluate(actor, Permission.REVIEW_WRITE):
@@ -126,7 +133,7 @@ class DraftReviewService:
             raise NotFoundError("Draft not found.")
 
         if draft.reviewer_status != DraftReviewerStatus.DRAFT.value:
-             raise InvalidTransitionError("Only DRAFTs can be edited.")
+            raise InvalidTransitionError("Only DRAFTs can be edited.")
 
         now = datetime.datetime.now(datetime.UTC)
         draft.reviewer_status = DraftReviewerStatus.APPROVED.value
@@ -137,8 +144,8 @@ class DraftReviewService:
         edit = DraftEditVersionORM(
             draft_id=draft_id,
             editor_id=actor.id,
-            original_content_json=draft.content_json, # Snapshot of AI content
-            edited_content_json=edited_content,       # Human edited version
+            original_content_json=draft.content_json,  # Snapshot of AI content
+            edited_content_json=edited_content,  # Human edited version
             edit_rationale=rationale,
             content_origin="HUMAN_EDITED",
             correlation_id=correlation_id,

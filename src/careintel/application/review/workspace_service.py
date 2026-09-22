@@ -22,7 +22,9 @@ class WorkspaceService:
         self.case_repo = case_repo
         self.review_repo = review_repo
 
-    async def get_reviewer_workspace(self, case_id: uuid.UUID, actor: UserContext) -> dict[str, Any]:
+    async def get_reviewer_workspace(
+        self, case_id: uuid.UUID, actor: UserContext
+    ) -> dict[str, Any]:
         """
         Builds the consolidated read model.
         Returns a dictionary representing the workspace view.
@@ -50,7 +52,7 @@ class WorkspaceService:
         # - AI Drafts + Edits (from AIDraftRepository & ReviewRepository)
         # - Referral Packages (from HandoffRepository)
 
-        workspace = {
+        workspace: dict[str, Any] = {
             "case": {
                 "id": str(case_orm.id),
                 "state": case_orm.state,
@@ -60,8 +62,10 @@ class WorkspaceService:
             "queue_item": {
                 "status": queue_item.status if queue_item else None,
                 "priority_bucket": queue_item.priority_bucket if queue_item else None,
-            } if queue_item else None,
-            "original_evidence": [], # TBD: Fetch from EvidenceRepository
+            }
+            if queue_item
+            else None,
+            "original_evidence": [],  # TBD: Fetch from EvidenceRepository
             "derived_information": {
                 "ocr_results": [],
                 "transcripts": [],
@@ -72,7 +76,7 @@ class WorkspaceService:
                 "clarification_questions": [],
             },
             "ai_content": {
-                "drafts": [], # TBD: Fetch from AIDraftRepository
+                "drafts": [],  # TBD: Fetch from AIDraftRepository
                 "policy_decisions": [],
             },
             "human_content": {
@@ -80,7 +84,9 @@ class WorkspaceService:
                     "id": str(active_note.id),
                     "content": active_note.content,
                     "version": active_note.version,
-                } if active_note else None,
+                }
+                if active_note
+                else None,
                 "review_decisions": [
                     {
                         "id": str(d.id),
@@ -90,7 +96,7 @@ class WorkspaceService:
                     }
                     for d in decisions
                 ],
-                "approved_drafts": [], # TBD: Filter from AI drafts
+                "approved_drafts": [],  # TBD: Filter from AI drafts
             },
             "escalations": [
                 {
@@ -100,7 +106,7 @@ class WorkspaceService:
                 }
                 for e in escalations
             ],
-            "referral_packages": [], # TBD: Fetch from HandoffRepository
+            "referral_packages": [],  # TBD: Fetch from HandoffRepository
         }
 
         return workspace

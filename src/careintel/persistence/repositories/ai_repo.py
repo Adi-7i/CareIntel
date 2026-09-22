@@ -51,9 +51,7 @@ class AIRepository:
         return orm
 
     async def update_run(self, run_id: uuid.UUID, updates: dict[str, Any]) -> None:
-        await self._session.execute(
-            update(AIRunORM).where(AIRunORM.id == run_id).values(**updates)
-        )
+        await self._session.execute(update(AIRunORM).where(AIRunORM.id == run_id).values(**updates))
         await self._session.flush()
 
     # ── AI Drafts ─────────────────────────────────────────────────────────────
@@ -71,9 +69,7 @@ class AIRepository:
         return result.scalar_one_or_none()
 
     async def get_draft(self, draft_id: uuid.UUID) -> AIDraftORM | None:
-        result = await self._session.execute(
-            select(AIDraftORM).where(AIDraftORM.id == draft_id)
-        )
+        result = await self._session.execute(select(AIDraftORM).where(AIDraftORM.id == draft_id))
         return result.scalar_one_or_none()
 
     async def update_draft(self, draft_id: uuid.UUID, updates: dict[str, Any]) -> None:

@@ -204,9 +204,7 @@ class AIService:
                 "validation_status": ValidationStatus.ACCEPTED.value,
                 "validation_errors": [],
                 "provenance_json": (
-                    claim_provenance_raw
-                    if isinstance(claim_provenance_raw, list)
-                    else []
+                    claim_provenance_raw if isinstance(claim_provenance_raw, list) else []
                 ),
                 "reviewer_status": DraftReviewerStatus.DRAFT.value,
             }
@@ -250,8 +248,7 @@ class AIService:
 
         if has_failure:
             await self._repo.update_draft(
-                draft_orm.id,
-                {"reviewer_status": final_reviewer_status.value}
+                draft_orm.id, {"reviewer_status": final_reviewer_status.value}
             )
 
         await self._session.commit()
@@ -282,6 +279,7 @@ class AIService:
     async def approve_draft(self, actor: UserContext, draft_id: uuid.UUID) -> None:
         """Approve an AI draft for use in case state transitions."""
         from careintel.application.auth.permission_service import PermissionService
+
         PermissionService.check(actor, Permission.AI_WRITE)
 
         draft = await self._repo.get_draft(draft_id)
@@ -297,7 +295,7 @@ class AIService:
                 "reviewer_status": DraftReviewerStatus.APPROVED.value,
                 "reviewer_id": actor.id,
                 "reviewed_at": datetime.datetime.now(datetime.UTC).replace(tzinfo=None),
-            }
+            },
         )
         await self._session.commit()
         await self._audit_event(
@@ -306,12 +304,13 @@ class AIService:
             target_id=draft_id,
             target_type="ai_draft",
             outcome="success",
-            detail={"decision": "APPROVED"}
+            detail={"decision": "APPROVED"},
         )
 
     async def reject_draft(self, actor: UserContext, draft_id: uuid.UUID) -> None:
         """Reject an AI draft."""
         from careintel.application.auth.permission_service import PermissionService
+
         PermissionService.check(actor, Permission.AI_WRITE)
 
         draft = await self._repo.get_draft(draft_id)
@@ -324,7 +323,7 @@ class AIService:
                 "reviewer_status": DraftReviewerStatus.REJECTED.value,
                 "reviewer_id": actor.id,
                 "reviewed_at": datetime.datetime.now(datetime.UTC).replace(tzinfo=None),
-            }
+            },
         )
         await self._session.commit()
         await self._audit_event(
@@ -333,7 +332,7 @@ class AIService:
             target_id=draft_id,
             target_type="ai_draft",
             outcome="success",
-            detail={"decision": "REJECTED"}
+            detail={"decision": "REJECTED"},
         )
 
     @staticmethod
@@ -344,11 +343,13 @@ class AIService:
         for p in orm.provenance_json:
             src_ids = p.get("supporting_source_ids", [])
             ids = [uuid.UUID(uid) if isinstance(uid, str) else uid for uid in src_ids]
-            prov_list.append(ClaimProvenance(
-                claim_text=p.get("claim_text", ""),
-                status=p.get("status", "UNSUPPORTED"),
-                supporting_source_ids=ids,
-            ))
+            prov_list.append(
+                ClaimProvenance(
+                    claim_text=p.get("claim_text", ""),
+                    status=p.get("status", "UNSUPPORTED"),
+                    supporting_source_ids=ids,
+                )
+            )
 
         return AIDraft(
             draft_id=orm.id,

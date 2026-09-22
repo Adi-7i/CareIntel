@@ -55,25 +55,25 @@ class ReferralPackageService:
             raise NotFoundError("Case not found.")
 
         # 1. Gate: Check Consent
-        has_consent = await self._check_consent(case_orm.patient_id)
+        has_consent = await self._check_consent(case_orm.synthetic_subject_id)
         if not has_consent:
-             # Audit the denied attempt
-             await self.audit_repo.append(
-                 AuditLogORM(
-                     event_type=AuditEventType.REFERRAL_CONSENT_DENIED.value,
-                     actor_id=actor.id,
-                     target_id=case_id,
-                     target_type="case",
-                     correlation_id=correlation_id,
-                     outcome="FAILURE",
-                 )
-             )
-             raise ConsentError("Active consent for REFERRAL is required.")
+            # Audit the denied attempt
+            await self.audit_repo.append(
+                AuditLogORM(
+                    event_type=AuditEventType.REFERRAL_CONSENT_DENIED.value,
+                    actor_id=actor.id,
+                    target_id=case_id,
+                    target_type="case",
+                    correlation_id=correlation_id,
+                    outcome="FAILURE",
+                )
+            )
+            raise ConsentError("Active consent for REFERRAL is required.")
 
         # 2. Gate: Case State must allow referral
         if case_orm.state not in (CaseState.REFERRED.value, CaseState.COMPLETED.value):
-             # Depending on exact workflow, they might prepare it in REVIEWED just before transition
-             pass
+            # Depending on exact workflow, they might prepare it in REVIEWED just before transition
+            pass
 
         # 3. Data minimization: Validate provided evidence_ids exist and are linked to case
         # (Omitted in this mock, but would query EvidenceRepository)
@@ -83,17 +83,17 @@ class ReferralPackageService:
         version = 1
         if latest_package:
             if latest_package.status == "DRAFT":
-                 # Could update the draft instead of creating a new version
-                 pass
+                # Could update the draft instead of creating a new version
+                pass
             version = latest_package.version + 1
-            latest_package.status = "SUPERSEDED" # If it wasn't finalized
+            latest_package.status = "SUPERSEDED"  # If it wasn't finalized
 
         # 5. Compile content (Mock)
         content_json: dict[str, Any] = {
             "case_id": str(case_id),
-            "patient_id": str(case_orm.patient_id),
+            "synthetic_subject_id": str(case_orm.synthetic_subject_id),
             "evidence_refs": [str(e) for e in evidence_ids],
-            "approved_facts": [], # Would pull from approved AI drafts
+            "approved_facts": [],  # Would pull from approved AI drafts
         }
 
         package = ReferralPackageORM(
@@ -109,18 +109,18 @@ class ReferralPackageService:
         await self.handoff_repo.create_referral_package(package)
 
         if latest_package:
-             package.superseded_by = latest_package.id
+            package.superseded_by = latest_package.id
 
         await self.audit_repo.append(
-             AuditLogORM(
-                 event_type=AuditEventType.REFERRAL_PACKAGE_CREATED.value,
-                 actor_id=actor.id,
-                 target_id=package.id,
-                 target_type="referral_package",
-                 correlation_id=correlation_id,
-                 outcome="SUCCESS",
-                 detail={"version": version},
-             )
+            AuditLogORM(
+                event_type=AuditEventType.REFERRAL_PACKAGE_CREATED.value,
+                actor_id=actor.id,
+                target_id=package.id,
+                target_type="referral_package",
+                correlation_id=correlation_id,
+                outcome="SUCCESS",
+                detail={"version": version},
+            )
         )
         return package
 
@@ -135,18 +135,18 @@ class ReferralPackageService:
             raise NotFoundError("Package not found.")
 
         if package.status != "DRAFT":
-             return package # Idempotent if already FINALIZED or SUPERSEDED
+            return package  # Idempotent if already FINALIZED or SUPERSEDED
 
         package.status = "FINALIZED"
 
         await self.audit_repo.append(
-             AuditLogORM(
-                 event_type=AuditEventType.REFERRAL_PACKAGE_FINALIZED.value,
-                 actor_id=actor.id,
-                 target_id=package.id,
-                 target_type="referral_package",
-                 correlation_id=correlation_id,
-                 outcome="SUCCESS",
-             )
+            AuditLogORM(
+                event_type=AuditEventType.REFERRAL_PACKAGE_FINALIZED.value,
+                actor_id=actor.id,
+                target_id=package.id,
+                target_type="referral_package",
+                correlation_id=correlation_id,
+                outcome="SUCCESS",
+            )
         )
         return package

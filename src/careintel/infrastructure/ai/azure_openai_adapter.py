@@ -10,9 +10,11 @@ Enforces context separation via explicit system vs. user message boundaries.
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import Any, cast
 
 from openai import AsyncAzureOpenAI
+from openai.types.chat import ChatCompletionMessageParam
+from openai.types.shared_params import ResponseFormatJSONSchema
 
 from careintel.domain.ai.models import AITaskConfig, SafeContext
 from careintel.infrastructure.ai.port import LLMProviderError, LLMResult
@@ -23,11 +25,17 @@ class AzureOpenAIAdapter:
     Azure OpenAI implementation of the LLMProvider Protocol.
     """
 
-    def __init__(self, endpoint: str, api_key: str, deployment: str) -> None:
+    def __init__(
+        self,
+        endpoint: str,
+        api_key: str,
+        deployment: str,
+        api_version: str = "2024-08-01-preview",
+    ) -> None:
         self._client = AsyncAzureOpenAI(
             azure_endpoint=endpoint,
             api_key=api_key,
-            api_version="2024-02-15-preview",
+            api_version=api_version,
         )
         self._deployment = deployment
 
@@ -43,7 +51,7 @@ class AzureOpenAIAdapter:
 
         # Structure the schema as expected by OpenAI's response_format
         # Strict mode is required for guaranteed schema adherence.
-        response_format = {
+        response_format: ResponseFormatJSONSchema = {
             "type": "json_schema",
             "json_schema": {
                 "name": config.task_type.value,
@@ -55,11 +63,11 @@ class AzureOpenAIAdapter:
 
         try:
             response = await self._client.chat.completions.create(
-                model=self._deployment, # Azure uses deployment name as the model
+                model=self._deployment,  # Azure uses deployment name as the model
                 messages=messages,
                 response_format=response_format,
                 timeout=config.timeout_seconds,
-                seed=42,          # Request best-effort determinism
+                seed=42,  # Request best-effort determinism
             )
 
             choice = response.choices[0]
@@ -83,27 +91,27 @@ class AzureOpenAIAdapter:
                 prompt_tokens=prompt_tokens,
                 completion_tokens=completion_tokens,
             )
-        except Exception as e:
-            raise LLMProviderError(f"Azure OpenAI API error: {e!s}") from e
+        except Exception as exc:
+            raise LLMProviderError(f"Azure OpenAI request failed ({type(exc).__name__})") from exc
 
-    def _build_messages(self, context: SafeContext) -> list[dict[str, str]]:
+    def _build_messages(self, context: SafeContext) -> list[ChatCompletionMessageParam]:
         """
         Map SafeContext into OpenAI chat messages.
 
         SYSTEM: All application-controlled trusted instructions and constraints.
         USER: All external/untrusted data, clearly delineated by origin.
         """
-        system_content = (
-            f"{context.system_instructions}\n\n"
-            f"TASK:\n{context.task_instructions}\n\n"
-        )
+        system_content = f"{context.system_instructions}\n\nTASK:\n{context.task_instructions}\n\n"
         if context.policy_constraints:
             system_content += "CONSTRAINTS:\n"
             for c in context.policy_constraints:
                 system_content += f"- {c}\n"
 
         messages = [
-            {"role": "system", "content": system_content.strip()}
+            cast(
+                ChatCompletionMessageParam,
+                {"role": "system", "content": system_content.strip()},
+            )
         ]
 
         # Append data blocks as user messages with structural boundaries
@@ -129,12 +137,17 @@ class AzureOpenAIAdapter:
         _append_passages("CONFLICTING INFORMATION", context.conflicting_information)
 
         if user_content.strip():
-            messages.append({"role": "user", "content": user_content.strip()})
+            messages.append(
+                cast(
+                    ChatCompletionMessageParam,
+                    {"role": "user", "content": user_content.strip()},
+                )
+            )
 
         return messages
+
 
 # Verify Protocol compliance at import time
 def _check_protocol() -> None:
     # Just type checking structure, don't need real keys
     pass
-

@@ -137,6 +137,14 @@ class ServiceUnavailableError(CareIntelError):
     message = "A required service is temporarily unavailable. Please try again later."
 
 
+class CapabilityNotImplementedError(CareIntelError):
+    """A deliberately exposed contract has no safe persisted implementation yet."""
+
+    code = "CAPABILITY_NOT_IMPLEMENTED"
+    http_status = 501
+    message = "This capability is not implemented in the current release."
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Evidence Exceptions
 # ──────────────────────────────────────────────────────────────────────────────

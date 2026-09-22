@@ -9,6 +9,8 @@ import uuid
 import pytest
 
 from careintel.application.auth.password_hasher import PasswordHasher
+from careintel.application.auth.token_service import JWTService
+from careintel.core.config import get_settings
 from careintel.domain.auth.models import UserContext
 from careintel.domain.auth.permissions import Permission
 from careintel.domain.auth.policy import AuthorizationPolicy
@@ -95,3 +97,34 @@ def test_authorization_policy_facility_scope_mismatch() -> None:
         user, Permission.CASE_READ, facility_scope=other_facility
     )
     assert granted is False
+
+
+@pytest.mark.unit
+def test_authorization_policy_missing_scope_mapping_denied() -> None:
+    user = UserContext(
+        id=uuid.uuid4(),
+        is_active=True,
+        roles={"doctor"},
+        permissions={Permission.CASE_READ.value},
+        role_facilities={},
+    )
+
+    granted = AuthorizationPolicy.evaluate(
+        user,
+        Permission.CASE_READ,
+        facility_scope=uuid.uuid4(),
+    )
+
+    assert granted is False
+
+
+@pytest.mark.unit
+def test_jwt_round_trip_preserves_required_session_timestamps() -> None:
+    service = JWTService(get_settings())
+    token = service.issue_token(uuid.uuid4(), uuid.uuid4())
+
+    claims = service.validate_token(token)
+
+    assert claims.iat is not None
+    assert claims.exp is not None
+    assert claims.exp > claims.iat

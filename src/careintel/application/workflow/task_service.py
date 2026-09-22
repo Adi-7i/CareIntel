@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import datetime
 import uuid
+from collections.abc import Sequence
 
 from careintel.core.errors import InvalidTransitionError
 from careintel.domain.workflow.models import AsyncTask, AsyncTaskPayload
@@ -91,6 +92,10 @@ class AsyncTaskService:
             return self._to_domain(orm)
         return None
 
+    async def list_for_case(self, case_id: uuid.UUID) -> Sequence[AsyncTask]:
+        """List durable tasks associated with a case."""
+        return [self._to_domain(orm) for orm in await self.task_repo.list_for_case(case_id)]
+
     async def transition_status(
         self, task_id: uuid.UUID, to_status: AsyncTaskStatus
     ) -> AsyncTask | None:
@@ -116,7 +121,9 @@ class AsyncTaskService:
         Find RUNNING tasks older than the threshold, and transition them to PENDING
         or FAILED (if max attempts reached).
         """
-        threshold = datetime.datetime.now(datetime.UTC) - datetime.timedelta(seconds=stale_threshold_seconds)
+        threshold = datetime.datetime.now(datetime.UTC) - datetime.timedelta(
+            seconds=stale_threshold_seconds
+        )
         stale_orms = await self.task_repo.find_stale_tasks(threshold)
 
         recovered_ids = []

@@ -70,7 +70,6 @@ def build_engine(settings: Settings) -> AsyncEngine:
             "driver": "asyncpg",
             "pool_size": settings.database_pool_size,
             "max_overflow": settings.database_max_overflow,
-            "database": settings.database_url_safe(),
         },
     )
     return engine

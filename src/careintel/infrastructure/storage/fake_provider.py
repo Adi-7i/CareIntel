@@ -45,3 +45,6 @@ class FakeBlobProvider(BlobStoragePort):
         if key not in self._store:
             raise StorageError("Blob not found")
         return f"https://fake-storage.local/{key}?sas_token=fake-sas-token&ttl={ttl_seconds}"
+
+    async def close(self) -> None:
+        """No-op for the in-memory provider."""

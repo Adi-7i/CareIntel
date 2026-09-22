@@ -125,12 +125,10 @@ class AuthService:
             for perm in role.permissions:
                 permissions.add(perm.code)
 
-        # facility_id is in UserRoleORM. Since user.roles is just RoleORM,
-        # we can't get facility_id trivially without another query or relationship.
-        # But Phase 2 requires no facilities table, and facility_id is just a UUID.
-        # So we'll skip role_facilities mapping for this basic implementation
-        # or load it in a separate query if needed.
-        role_facilities: dict[str, uuid.UUID | None] = {}
+        # Facility grants live on the user-role association, not RoleORM.  Load
+        # them explicitly so object-level authorization cannot mistake a missing
+        # mapping for a system-wide role.
+        role_facilities = await self.user_repo.get_role_facilities(user.id)
 
         return UserContext(
             id=user.id,

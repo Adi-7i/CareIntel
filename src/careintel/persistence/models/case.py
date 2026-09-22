@@ -32,7 +32,9 @@ class CaseORM(Base, TimestampMixin):
         nullable=True,
     )
     state: Mapped[str] = mapped_column(String, nullable=False)
-    version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    version: Mapped[int] = mapped_column(
+        Integer, default=1, server_default=text("1"), nullable=False
+    )
     opened_by: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("users.id"),
@@ -121,7 +123,9 @@ class CaseOutboxORM(Base):
         comment="ULID as primary key",
     )
     event_type: Mapped[str] = mapped_column(String, nullable=False)
-    event_version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    event_version: Mapped[int] = mapped_column(
+        Integer, default=1, server_default=text("1"), nullable=False
+    )
     occurred_at: Mapped[datetime.datetime] = mapped_column(
         server_default=text("now()"),
         nullable=False,

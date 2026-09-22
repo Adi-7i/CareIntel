@@ -54,12 +54,15 @@ async def check_readiness(engine: AsyncEngine, blob_provider: BlobStoragePort) -
     redis_url = settings.redis_url.get_secret_value() if settings.redis_url else None
     if redis_url:
         try:
-            r = redis.from_url(redis_url)
+            r = redis.Redis.from_url(redis_url)
             await r.ping()
             redis_ok = True
             await r.aclose()
-        except Exception as e:
-            logger.warning(f"Redis health check failed: {e}")
+        except Exception as exc:
+            logger.warning(
+                "Redis health check failed",
+                extra={"error_type": type(exc).__name__},
+            )
     else:
         # If running locally without redis, we consider it ok (demo mode)
         # In production, settings validation would have failed startup if redis_url was missing.
@@ -69,11 +72,14 @@ async def check_readiness(engine: AsyncEngine, blob_provider: BlobStoragePort) -
 
     blob_ok = False
     try:
-        # Just check existence of a dummy key. This touches the storage account without downloading anything.
+        # Touch storage without downloading content.
         await blob_provider.exists("healthcheck_dummy_key_do_not_create")
         blob_ok = True
-    except Exception as e:
-        logger.warning(f"Blob storage health check failed: {e}")
+    except Exception as exc:
+        logger.warning(
+            "Blob storage health check failed",
+            extra={"error_type": type(exc).__name__},
+        )
 
     checks["blob_storage"] = "ok" if blob_ok else "unavailable"
 

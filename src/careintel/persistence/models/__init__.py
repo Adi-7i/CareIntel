@@ -20,6 +20,7 @@ from careintel.persistence.models.evidence import (
     EvidenceStateHistoryORM,
     TextContentORM,
 )
+from careintel.persistence.models.handoff import HandoffORM, RecipientORM, ReferralPackageORM
 from careintel.persistence.models.knowledge import (
     ChunkEmbeddingORM,
     EmbeddingVersionORM,
@@ -39,6 +40,13 @@ from careintel.persistence.models.processing import (
     TranscriptSegmentORM,
 )
 from careintel.persistence.models.retrieval import RetrievalCandidateORM, RetrievalRunORM
+from careintel.persistence.models.review import (
+    DraftEditVersionORM,
+    EscalationRecordORM,
+    ReviewDecisionORM,
+    ReviewerNoteORM,
+    ReviewQueueItemORM,
+)
 from careintel.persistence.models.session import TokenSessionORM
 from careintel.persistence.models.structuring import (
     ChecklistPolicyVersionORM,
@@ -73,13 +81,16 @@ __all__ = [
     "ConflictRecordORM",
     "ConsentEventORM",
     "ConsentORM",
+    "DraftEditVersionORM",
     "EmbeddingVersionORM",
     "EncounterORM",
+    "EscalationRecordORM",
     "EvidenceORM",
     "EvidenceOutboxORM",
     "EvidenceStateHistoryORM",
     "ExtractedCandidateORM",
     "ExtractionRunORM",
+    "HandoffORM",
     "KnowledgeChunkORM",
     "KnowledgeSourceORM",
     "KnowledgeVersionORM",
@@ -91,8 +102,13 @@ __all__ = [
     "PermissionORM",
     "PolicyDecisionORM",
     "ProcessingRunORM",
+    "RecipientORM",
+    "ReferralPackageORM",
     "RetrievalCandidateORM",
     "RetrievalRunORM",
+    "ReviewDecisionORM",
+    "ReviewQueueItemORM",
+    "ReviewerNoteORM",
     "RoleORM",
     "RolePermissionORM",
     "StructuringRunORM",

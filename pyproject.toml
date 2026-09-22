@@ -112,8 +112,12 @@ mypy_path = "src"
 exclude = ["migrations/"]
 
 [[tool.mypy.overrides]]
-module = ["pythonjsonlogger.*"]
+module = ["pythonjsonlogger.*", "celery", "celery.*"]
 ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["careintel.workers.*"]
+disallow_untyped_decorators = false
 
 # ──────────────────────────────────────────────
 # Pytest

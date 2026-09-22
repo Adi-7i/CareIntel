@@ -53,6 +53,43 @@ class FileValidator:
             raise MimeMismatchError("Could not determine valid MIME type from file signature.")
         return mime_type
 
+    def validate_mime_consistency(
+        self,
+        *,
+        filename: str,
+        declared_mime: str,
+        detected_mime: str,
+    ) -> None:
+        """Require the extension, declared MIME, and detected MIME to agree."""
+        extension = os.path.splitext(filename)[1].lower()
+        allowed_mimes: dict[str, frozenset[str]] = {
+            ".pdf": frozenset({"application/pdf"}),
+            ".docx": frozenset(
+                {
+                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    "application/zip",
+                }
+            ),
+            ".txt": frozenset({"text/plain"}),
+            ".jpg": frozenset({"image/jpeg"}),
+            ".jpeg": frozenset({"image/jpeg"}),
+            ".png": frozenset({"image/png"}),
+            ".mp3": frozenset({"audio/mpeg", "audio/mp3"}),
+            ".wav": frozenset({"audio/wav", "audio/x-wav"}),
+            ".m4a": frozenset({"audio/mp4", "video/mp4"}),
+            ".ogg": frozenset({"audio/ogg", "application/ogg"}),
+        }
+        expected = allowed_mimes.get(extension)
+        if expected is None:
+            raise MimeMismatchError("No MIME policy exists for the uploaded extension.")
+
+        declared = declared_mime.split(";", 1)[0].strip().lower()
+        detected = detected_mime.split(";", 1)[0].strip().lower()
+        if declared not in expected or detected not in expected:
+            raise MimeMismatchError(
+                "The declared type, detected content type, and filename extension do not match."
+            )
+
     async def stream_and_validate(self, file_stream: IO[bytes]) -> tuple[str, str, int]:
         """
         Stream the file to compute SHA-256 and enforce size limits.

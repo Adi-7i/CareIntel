@@ -13,8 +13,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from careintel.application.workflow.task_service import AsyncTaskService
 from careintel.domain.workflow.models import AsyncTaskPayload
+from careintel.domain.workflow.task_states import AsyncTaskStatus
 from careintel.persistence.models.case import CaseOutboxORM
 from careintel.persistence.models.evidence import EvidenceOutboxORM
+from careintel.persistence.repositories.task_repo import AsyncTaskRepository
 from careintel.workers.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
@@ -25,13 +27,14 @@ class UnifiedOutboxDispatcher:
     Polls outbox tables, creates AsyncTasks, and dispatches to Celery.
     """
 
-    def __init__(self, session_factory: Any, task_service: AsyncTaskService) -> None:
+    def __init__(self, session_factory: Any) -> None:
         # We need a session factory because the dispatcher runs in a loop
         # and should create fresh short-lived sessions.
         self.session_factory = session_factory
-        self.task_service = task_service
 
-    async def _process_batch(self, session: AsyncSession, model_cls: Any, batch_size: int = 50) -> int:
+    async def _process_batch(
+        self, session: AsyncSession, model_cls: Any, batch_size: int = 50
+    ) -> int:
         """Process a single batch of events for a given outbox model."""
         # 1. Select unpublished with SKIP LOCKED
         stmt = (
@@ -47,6 +50,7 @@ class UnifiedOutboxDispatcher:
         if not events:
             return 0
 
+        task_service = AsyncTaskService(AsyncTaskRepository(session))
         processed = 0
         now = datetime.datetime.now(datetime.UTC)
 
@@ -66,10 +70,8 @@ class UnifiedOutboxDispatcher:
                 payload = self._build_payload(event, task_name)
 
                 # 3. Idempotently create task
-                task = await self.task_service.get_or_create_task(
-                    idempotency_key=f"outbox_{event.id}",
-                    payload=payload,
-                    causation_id=event.id
+                task = await task_service.get_or_create_task(
+                    idempotency_key=f"outbox_{event.id}", payload=payload, causation_id=event.id
                 )
 
                 # 4. Dispatch to Celery
@@ -81,14 +83,17 @@ class UnifiedOutboxDispatcher:
 
                 # 5. Mark outbox published & task queued
                 event.published_at = now
-                await self.task_service.transition_status(task.id, "QUEUED")
+                await task_service.transition_status(task.id, AsyncTaskStatus.QUEUED)
 
                 processed += 1
-            except Exception as e:
-                logger.exception(f"Failed to process outbox event {event.id}: {e}")
+            except Exception as exc:
+                logger.error(
+                    "Failed to process outbox event",
+                    extra={"error_type": type(exc).__name__},
+                )
                 # We don't rollback the whole batch, we just leave this event unpublished
-                # so it will be retried. But we do need to rollback the session to clear the error state.
-                raise e
+                # so it will be retried. Raising clears the failed transaction.
+                raise
 
         # Commit batch
         await session.commit()
@@ -114,7 +119,9 @@ class UnifiedOutboxDispatcher:
             entity_id = event.case_id
         else:
             entity_type = "evidence"
-            entity_id = getattr(event, "evidence_id", event.case_id) # Evidence outbox has evidence_id
+            entity_id = getattr(
+                event, "evidence_id", event.case_id
+            )  # Evidence outbox has evidence_id
 
         # The config is typically the payload from the outbox
         config = event.payload
@@ -155,7 +162,11 @@ class UnifiedOutboxDispatcher:
                     evidence_processed = await self._process_batch(session, EvidenceOutboxORM)
 
                     if case_processed > 0 or evidence_processed > 0:
-                        logger.debug(f"Dispatched {case_processed} case events, {evidence_processed} evidence events.")
+                        logger.debug(
+                            "Dispatched %s case events, %s evidence events.",
+                            case_processed,
+                            evidence_processed,
+                        )
 
                 # Periodically trigger stale sweep (e.g. every 60 seconds)
                 loops_since_sweep += 1
@@ -163,12 +174,15 @@ class UnifiedOutboxDispatcher:
                     celery_app.send_task(
                         "careintel.tasks.workflow.recover_stale_tasks",
                         kwargs={"threshold_seconds": 120},
-                        queue="careintel_workflow"
+                        queue="careintel_workflow",
                     )
                     loops_since_sweep = 0
 
-            except Exception as e:
-                logger.error(f"Outbox polling error: {e}")
+            except Exception as exc:
+                logger.error(
+                    "Outbox polling error",
+                    extra={"error_type": type(exc).__name__},
+                )
                 # Sleep a bit longer on error
                 await asyncio.sleep(interval_seconds * 2)
                 continue

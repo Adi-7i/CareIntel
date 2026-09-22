@@ -15,7 +15,9 @@ import datetime
 import uuid
 from typing import TYPE_CHECKING, Any
 
+from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
+    Computed,
     Date,
     ForeignKey,
     Index,
@@ -25,7 +27,7 @@ from sqlalchemy import (
     UniqueConstraint,
     text,
 )
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.dialects.postgresql import JSONB, TSVECTOR, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from careintel.persistence.base import Base, TimestampMixin
@@ -48,9 +50,7 @@ class KnowledgeSourceORM(Base, TimestampMixin):
     source_type: Mapped[str] = mapped_column(String, nullable=False)
     # Institutional owner; None = system-managed
     owner: Mapped[str | None] = mapped_column(String, nullable=True)
-    publication_status: Mapped[str] = mapped_column(
-        String, nullable=False, default="DRAFT"
-    )
+    publication_status: Mapped[str] = mapped_column(String, nullable=False, default="DRAFT")
     effective_date: Mapped[datetime.date | None] = mapped_column(Date, nullable=True)
     retirement_date: Mapped[datetime.date | None] = mapped_column(Date, nullable=True)
     created_by: Mapped[uuid.UUID] = mapped_column(
@@ -132,17 +132,17 @@ class KnowledgeChunkORM(Base):
     metadata_json: Mapped[dict[str, Any]] = mapped_column(
         JSONB, server_default=text("'{}'::jsonb"), nullable=False
     )
-    # PostgreSQL tsvector for full-text search
-    # Populated via application-level update using to_tsvector('english', content)
-    # Column type is TEXT here; cast in queries. Using TSVECTOR type via raw DDL
-    # in migration for proper GIN indexing.
-    # NOTE: We use a separate migration DDL statement for this column rather than
-    # SQLAlchemy column type to avoid introducing tsvector as a Python type.
+    fts_vector: Mapped[Any] = mapped_column(
+        TSVECTOR,
+        Computed("to_tsvector('english', content)", persisted=True),
+        nullable=True,
+    )
 
     __table_args__ = (
         UniqueConstraint("version_id", "chunk_index", name="uq_chunk_index"),
         Index("ix_knowledge_chunks_version", "version_id"),
         Index("ix_knowledge_chunks_status", "status"),
+        Index("ix_knowledge_chunks_fts", "fts_vector", postgresql_using="gin"),
     )
 
 
@@ -201,16 +201,16 @@ class ChunkEmbeddingORM(Base):
     created_at: Mapped[datetime.datetime] = mapped_column(
         server_default=text("now()"), nullable=False
     )
-    # NOTE: The actual `embedding vector(N)` column is added via raw DDL in
-    # the Alembic migration because SQLAlchemy does not natively model
-    # parameterized VECTOR types without pgvector's SQLAlchemy extension types.
-    # Queries against this column use pgvector's SQLAlchemy types from the
-    # pgvector package (pgvector.sqlalchemy.Vector).
+    embedding: Mapped[Any] = mapped_column(Vector(1536), nullable=True)
 
     __table_args__ = (
-        UniqueConstraint(
-            "chunk_id", "embedding_version_id", name="uq_chunk_embedding_version"
-        ),
+        UniqueConstraint("chunk_id", "embedding_version_id", name="uq_chunk_embedding_version"),
         Index("ix_chunk_embeddings_chunk", "chunk_id"),
         Index("ix_chunk_embeddings_version", "embedding_version_id"),
+        Index(
+            "ix_chunk_embeddings_hnsw",
+            "embedding",
+            postgresql_using="hnsw",
+            postgresql_ops={"embedding": "vector_cosine_ops"},
+        ),
     )

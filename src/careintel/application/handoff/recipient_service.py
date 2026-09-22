@@ -28,9 +28,9 @@ class RecipientService:
 
     async def get_recipient(self, recipient_id: uuid.UUID, actor: UserContext) -> RecipientORM:
         if not AuthorizationPolicy.evaluate(actor, Permission.HANDOFF_READ):
-             raise AuthorizationError("Actor not authorized to read recipients.")
+            raise AuthorizationError("Actor not authorized to read recipients.")
 
         recipient = await self.handoff_repo.get_recipient(recipient_id)
         if not recipient:
-             raise NotFoundError("Recipient not found.")
+            raise NotFoundError("Recipient not found.")
         return recipient

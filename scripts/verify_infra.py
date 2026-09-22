@@ -1,176 +1,193 @@
-"""
-Verification script for Production Infrastructure.
-Verifies PostgreSQL, Redis, Azure Blob Storage, and Celery connectivity.
-"""
+"""Read-only infrastructure and synthetic Azure Blob verification."""
+
+from __future__ import annotations
 
 import asyncio
-import os
-import sys
-import tempfile
+import time
 import uuid
-from typing import AsyncIterator
+from collections.abc import AsyncIterator
 
-from dotenv import load_dotenv
 import redis.asyncio as redis
+from alembic.config import Config
+from alembic.script import ScriptDirectory
+from sqlalchemy import text
 
-from careintel.core.config import get_settings
-from careintel.core.database import check_database_liveness, build_engine
+from careintel.core.config import Settings, get_settings
+from careintel.core.database import build_engine
 from careintel.infrastructure.storage.azure_provider import AzureBlobProvider
 
 
-async def dummy_stream(data: bytes, chunk_size: int = 1024) -> AsyncIterator[bytes]:
-    for i in range(0, len(data), chunk_size):
-        yield data[i:i + chunk_size]
+async def _chunks(data: bytes, chunk_size: int = 1024) -> AsyncIterator[bytes]:
+    for offset in range(0, len(data), chunk_size):
+        yield data[offset : offset + chunk_size]
 
 
-async def test_postgres(settings) -> bool:
-    print("\n--- Testing PostgreSQL / Supabase ---")
+async def verify_postgres(settings: Settings) -> bool:
+    """Verify connectivity, Alembic head, pgvector shape, and vector index."""
+    print("\n--- PostgreSQL / Supabase ---")
     engine = build_engine(settings)
+    started = time.perf_counter()
     try:
-        is_live = await check_database_liveness(engine)
-        if is_live:
-            print("PASS (SELECT 1 succeeded)")
-            return True
-        else:
-            print("FAIL (SELECT 1 failed)")
-            return False
-    except Exception as e:
-        print(f"FAIL: {e}")
+        expected_head = ScriptDirectory.from_config(Config("alembic.ini")).get_current_head()
+        async with engine.connect() as connection:
+            await connection.execute(text("SELECT 1"))
+            current_head = (
+                await connection.execute(text("SELECT version_num FROM alembic_version"))
+            ).scalar_one()
+            vector_version = (
+                await connection.execute(
+                    text("SELECT extversion FROM pg_extension WHERE extname = 'vector'")
+                )
+            ).scalar_one_or_none()
+            vector_type = (
+                await connection.execute(
+                    text(
+                        """
+                        SELECT format_type(a.atttypid, a.atttypmod)
+                        FROM pg_attribute a
+                        JOIN pg_class c ON c.oid = a.attrelid
+                        WHERE c.relname = 'chunk_embeddings'
+                          AND a.attname = 'embedding'
+                          AND NOT a.attisdropped
+                        """
+                    )
+                )
+            ).scalar_one_or_none()
+            vector_index = (
+                await connection.execute(
+                    text(
+                        """
+                        SELECT indexdef
+                        FROM pg_indexes
+                        WHERE tablename = 'chunk_embeddings'
+                          AND indexname = 'ix_chunk_embeddings_hnsw'
+                        """
+                    )
+                )
+            ).scalar_one_or_none()
+
+        checks = {
+            "migration_head": current_head == expected_head,
+            "pgvector_extension": vector_version is not None,
+            "embedding_dimension": vector_type == "vector(1536)",
+            "hnsw_cosine_index": bool(
+                vector_index
+                and "USING hnsw" in vector_index
+                and "vector_cosine_ops" in vector_index
+            ),
+        }
+        for name, passed in checks.items():
+            print(f"{name}: {'PASS' if passed else 'FAIL'}")
+        print(f"latency_ms: {(time.perf_counter() - started) * 1000:.2f}")
+        return all(checks.values())
+    except Exception as exc:
+        print(f"FAIL ({type(exc).__name__})")
         return False
     finally:
         await engine.dispose()
 
 
-async def test_redis(settings) -> bool:
-    print("\n--- Testing Redis ---")
-    redis_url = settings.redis_url.get_secret_value() if settings.redis_url else None
-    if not redis_url:
-        print("SKIP: REDIS_URL not configured")
-        return False
-        
-    try:
-        r = redis.from_url(redis_url)
-        await r.ping()
-        print("PASS (PING succeeded)")
-        await r.aclose()
-        return True
-    except Exception as e:
-        print(f"FAIL: {e}")
+async def verify_redis(settings: Settings) -> bool:
+    """Verify Redis PING without exposing the configured URL."""
+    print("\n--- Redis ---")
+    if not settings.redis_url:
+        print("NOT VERIFIED (REDIS_URL is not configured)")
         return False
 
-
-async def test_celery_broker() -> bool:
-    print("\n--- Testing Celery Broker ---")
+    client = redis.from_url(settings.redis_url.get_secret_value())
+    started = time.perf_counter()
     try:
-        # Import celery app
+        passed = bool(await client.ping())
+        print(f"ping: {'PASS' if passed else 'FAIL'}")
+        print(f"latency_ms: {(time.perf_counter() - started) * 1000:.2f}")
+        return passed
+    except Exception as exc:
+        print(f"FAIL ({type(exc).__name__})")
+        return False
+    finally:
+        await client.aclose()
+
+
+def verify_celery_broker_connectivity() -> bool:
+    """Verify only broker connectivity; this is not worker-execution evidence."""
+    print("\n--- Celery broker connectivity ---")
+    started = time.perf_counter()
+    try:
         from careintel.workers.celery_app import celery_app
-        
-        # We can test broker connection by creating a connection
-        with celery_app.connection_for_write() as conn:
-            conn.connect()
-            print("PASS (Broker connected)")
-            return True
-    except Exception as e:
-        print(f"FAIL: {e}")
+
+        with celery_app.connection_for_write() as connection:
+            connection.connect()
+        print("broker_connection: PASS")
+        print("worker_execution: NOT VERIFIED by this check")
+        print(f"latency_ms: {(time.perf_counter() - started) * 1000:.2f}")
+        return True
+    except Exception as exc:
+        print(f"FAIL ({type(exc).__name__})")
         return False
 
 
-async def test_blob_storage(settings) -> bool:
-    print("\n--- Testing Azure Blob Storage ---")
-    connection_string = settings.azure_storage_connection_string
-    if not connection_string:
-        print("SKIP: AZURE_STORAGE_CONNECTION_STRING not configured")
+async def verify_blob(settings: Settings) -> bool:
+    """Upload, retrieve, authorize, integrity-check, and delete synthetic content."""
+    print("\n--- Azure Blob Storage ---")
+    if not settings.azure_storage_connection_string:
+        print("NOT VERIFIED (AZURE_STORAGE_CONNECTION_STRING is not configured)")
         return False
-        
+
     provider = AzureBlobProvider(
-        connection_string=connection_string.get_secret_value(),
+        connection_string=settings.azure_storage_connection_string.get_secret_value(),
         container_name=settings.azure_storage_container,
     )
-    
-    test_key = f"careintel-verify/{uuid.uuid4()}/test.txt"
-    test_content = b"Verification payload"
-    
-    # 1. Container verification
+    key = f"careintel-release-verification/{uuid.uuid4()}/synthetic.txt"
+    payload = b"CareIntel synthetic release verification payload"
+    uploaded = False
+    checks: dict[str, bool] = {}
+    started = time.perf_counter()
     try:
         await provider.ensure_container()
-        print("Container check: PASS")
-    except Exception as e:
-        print(f"FAIL (Container check): {e}")
-        return False
+        await provider.upload(key, _chunks(payload), "text/plain", len(payload))
+        uploaded = True
+        checks["upload"] = await provider.exists(key)
 
-    # 2. Upload
-    try:
-        stream = dummy_stream(test_content)
-        await provider.upload(test_key, stream, "text/plain", len(test_content))
-        print("Upload: PASS")
-    except Exception as e:
-        print(f"FAIL (Upload): {e}")
-        return False
-        
-    # 3. Download
-    try:
-        downloaded = b""
-        async for chunk in provider.download(test_key):
-            downloaded += chunk
-            
-        if downloaded == test_content:
-            print("Download verification: PASS")
-        else:
-            print("FAIL (Download verification: Content mismatch)")
-            return False
-    except Exception as e:
-        print(f"FAIL (Download): {e}")
-        return False
-        
-    # 4. Delete
-    try:
-        await provider.delete(test_key)
-        exists = await provider.exists(test_key)
-        if not exists:
-            print("Delete verification: PASS")
-        else:
-            print("FAIL (Delete verification: Blob still exists)")
-            return False
-    except Exception as e:
-        print(f"FAIL (Delete): {e}")
-        return False
+        downloaded = bytearray()
+        async for chunk in provider.download(key):
+            downloaded.extend(chunk)
+        checks["content_integrity"] = bytes(downloaded) == payload
 
-    return True
+        sas_url = await provider.generate_sas_url(key, ttl_seconds=60)
+        checks["authorized_read_url"] = "?" in sas_url and "sig=" in sas_url
+        checks["missing_object"] = not await provider.exists(f"{key}.missing")
+    except Exception as exc:
+        print(f"FAIL ({type(exc).__name__})")
+        return False
+    finally:
+        if uploaded:
+            try:
+                await provider.delete(key)
+                checks["cleanup"] = not await provider.exists(key)
+            except Exception as exc:
+                print(f"cleanup: FAIL ({type(exc).__name__})")
+                checks["cleanup"] = False
+        await provider.close()
+
+    for name, passed in checks.items():
+        print(f"{name}: {'PASS' if passed else 'FAIL'}")
+    print(f"latency_ms: {(time.perf_counter() - started) * 1000:.2f}")
+    return bool(checks) and all(checks.values())
 
 
 async def main() -> None:
-    # Do not enforce production constraints for the script itself unless we explicitly set it
-    # We load standard env
-    load_dotenv()
     settings = get_settings()
-    
-    print("="*60)
-    print("CAREINTEL INFRASTRUCTURE VERIFICATION")
-    print("="*60)
-    
     results = {
-        "PostgreSQL": await test_postgres(settings),
-        "Redis": await test_redis(settings),
-        "Celery Broker": await test_celery_broker(),
-        "Azure Blob Storage": await test_blob_storage(settings)
+        "PostgreSQL / pgvector": await verify_postgres(settings),
+        "Redis": await verify_redis(settings),
+        "Celery broker connectivity": verify_celery_broker_connectivity(),
+        "Azure Blob": await verify_blob(settings),
     }
-    
-    print("\n" + "="*60)
-    print("SUMMARY")
-    print("="*60)
-    all_pass = True
-    for k, v in results.items():
-        status = "PASS" if v else "FAIL/SKIPPED"
-        if not v:
-            all_pass = False
-        print(f"{k.ljust(20)}: {status}")
-        
-    if not all_pass:
-        print("\nNote: Skipped tests count as FAIL for the overall run if credentials were not provided.")
-        sys.exit(1)
-    else:
-        print("\nAll infrastructure checks passed.")
-        sys.exit(0)
+
+    print("\n--- Infrastructure summary ---")
+    for name, passed in results.items():
+        print(f"{name}: {'PASS' if passed else 'FAIL / NOT VERIFIED'}")
+    raise SystemExit(0 if all(results.values()) else 1)
 
 
 if __name__ == "__main__":

@@ -73,13 +73,17 @@ class ReviewDecisionService:
             raise NotFoundError("Review queue item not found.")
 
         # 3. Validate actor is assigned reviewer (or has override permission)
-        if queue_item.assigned_reviewer_id != actor.id and not AuthorizationPolicy.evaluate(actor, Permission.REVIEW_ASSIGN):
+        if queue_item.assigned_reviewer_id != actor.id and not AuthorizationPolicy.evaluate(
+            actor, Permission.REVIEW_ASSIGN
+        ):
             raise AuthorizationError("Only the assigned reviewer can submit a decision.")
 
         # 4. Validate Queue transition
         # Typically requires being IN_REVIEW to complete
         try:
-            ReviewStateMachine.validate_transition(queue_item.status, ReviewQueueStatus.REVIEW_COMPLETE)
+            ReviewStateMachine.validate_transition(
+                queue_item.status, ReviewQueueStatus.REVIEW_COMPLETE
+            )
         except InvalidTransitionError as e:
             raise InvalidTransitionError("Cannot submit decision for a case not in review.") from e
 
@@ -88,14 +92,16 @@ class ReviewDecisionService:
         if decision_type == ReviewDecisionType.REFER:
             target_case_state = CaseState.REFERRED
         elif decision_type == ReviewDecisionType.ESCALATE:
-            # We defer escalation logic to the EscalationService. This would be a 422 here if used directly.
+            # Escalation is handled by EscalationService, not this decision path.
             raise InvalidTransitionError("Use Escalation API to escalate a case.")
 
         # 6. Validate Case transition
         try:
             CaseStateMachine.validate_transition(case_orm.state, target_case_state)
         except InvalidTransitionError as e:
-             raise InvalidTransitionError(f"Cannot transition case from {case_orm.state} to {target_case_state}.") from e
+            raise InvalidTransitionError(
+                f"Cannot transition case from {case_orm.state} to {target_case_state}."
+            ) from e
 
         now = datetime.datetime.now(datetime.UTC)
 

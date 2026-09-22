@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import uuid
+from io import BytesIO
 
 from azure.ai.documentintelligence import DocumentIntelligenceClient
 from azure.core.credentials import AzureKeyCredential
@@ -24,8 +25,7 @@ class AzureDocumentIntelligenceProvider(OcrProvider):
 
     def __init__(self, endpoint: str, key: str, model: str = "prebuilt-layout") -> None:
         self._client = DocumentIntelligenceClient(
-            endpoint=endpoint,
-            credential=AzureKeyCredential(key)
+            endpoint=endpoint, credential=AzureKeyCredential(key)
         )
         self._model = model
         self._provider_version = f"azure-di-{model}-v1"
@@ -44,8 +44,8 @@ class AzureDocumentIntelligenceProvider(OcrProvider):
         def _analyze() -> object:
             poller = self._client.begin_analyze_document(
                 model_id=self._model,
-                body=file_bytes,
-                content_type="application/octet-stream"
+                body=BytesIO(file_bytes),
+                content_type="application/octet-stream",
             )
             return poller.result()
 
@@ -108,23 +108,31 @@ class AzureDocumentIntelligenceProvider(OcrProvider):
 
                 cells = []
                 for cell in tbl.cells:
-                    cells.append({
-                        "row_index": cell.row_index,
-                        "column_index": cell.column_index,
-                        "content": cell.content,
-                        "kind": cell.kind if hasattr(cell, "kind") else "content",
-                    })
+                    cells.append(
+                        {
+                            "row_index": cell.row_index,
+                            "column_index": cell.column_index,
+                            "content": cell.content,
+                            "kind": cell.kind if hasattr(cell, "kind") else "content",
+                        }
+                    )
 
                 # Simple markdown table generation for LLM
                 md_rows = []
                 for r in range(tbl.row_count):
                     row_cells = [c for c in cells if c["row_index"] == r]
                     row_cells.sort(key=lambda x: x["column_index"])
-                    row_text = "| " + " | ".join([c["content"].replace("\n", " ") for c in row_cells]) + " |"
+                    row_text = (
+                        "| "
+                        + " | ".join([c["content"].replace("\n", " ") for c in row_cells])
+                        + " |"
+                    )
                     md_rows.append(row_text)
                     if r == 0:
                         # Header separator
-                        md_rows.append("|" + "|".join(["---" for _ in range(tbl.column_count)]) + "|")
+                        md_rows.append(
+                            "|" + "|".join(["---" for _ in range(tbl.column_count)]) + "|"
+                        )
 
                 markdown = "\n".join(md_rows)
 
@@ -134,7 +142,7 @@ class AzureDocumentIntelligenceProvider(OcrProvider):
                         row_count=tbl.row_count,
                         column_count=tbl.column_count,
                         cells=cells,
-                        markdown=markdown
+                        markdown=markdown,
                     )
                 )
 

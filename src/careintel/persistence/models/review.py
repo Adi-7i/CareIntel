@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import datetime
 import uuid
+from typing import Any
 
 from sqlalchemy import ForeignKey, Index, Integer, String, Text, UniqueConstraint, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
@@ -129,8 +130,7 @@ class ReviewerNoteORM(Base):
 
     __table_args__ = (
         Index("ix_reviewer_notes_case", "case_id"),
-        # Only one active note per case (where superseded_by IS NULL)
-        UniqueConstraint("case_id", name="uq_reviewer_notes_active", postgresql_where=text("superseded_by IS NULL")),
+        UniqueConstraint("case_id", name="uq_reviewer_notes_active"),
     )
 
 
@@ -152,8 +152,8 @@ class DraftEditVersionORM(Base):
         ForeignKey("users.id"),
         nullable=False,
     )
-    original_content_json: Mapped[dict] = mapped_column(JSONB, nullable=False)
-    edited_content_json: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    original_content_json: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    edited_content_json: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     edit_rationale: Mapped[str | None] = mapped_column(Text, nullable=True)
     content_origin: Mapped[str] = mapped_column(String, nullable=False)
     correlation_id: Mapped[str] = mapped_column(String, nullable=False)

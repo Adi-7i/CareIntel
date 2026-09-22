@@ -1,11 +1,8 @@
-from careintel.core.config import get_settings
-settings = get_settings()
-print("redis_url in config:", settings.redis_url)
+"""Secret-safe Celery configuration presence check."""
 
-# test celery_app.py logic
-broker_url = (
-    settings.redis_url.get_secret_value()
-    if settings.redis_url
-    else settings.celery_broker_url.get_secret_value()
-)
-print("broker_url computed:", broker_url)
+from careintel.core.config import get_settings
+
+if __name__ == "__main__":
+    settings = get_settings()
+    print(f"redis_configured: {settings.redis_url is not None}")
+    print(f"result_backend_configured: {settings.celery_result_backend is not None}")

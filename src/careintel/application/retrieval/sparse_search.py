@@ -84,7 +84,4 @@ class SparseSearcher:
         )
 
         rows = result.fetchall()
-        return [
-            SparseSearchResult(chunk_id=row[0], sparse_score=float(row[1]))
-            for row in rows
-        ]
+        return [SparseSearchResult(chunk_id=row[0], sparse_score=float(row[1])) for row in rows]

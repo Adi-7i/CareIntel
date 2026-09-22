@@ -88,7 +88,9 @@ class ReviewService:
         try:
             ReviewStateMachine.validate_transition(item.status, ReviewQueueStatus.ASSIGNED)
         except InvalidTransitionError as e:
-            raise InvalidTransitionError("Case is already assigned or in an invalid state for assignment.") from e
+            raise InvalidTransitionError(
+                "Case is already assigned or in an invalid state for assignment."
+            ) from e
 
         # 4. Fetch case to check facility scope
         case_orm = await self.case_repo.get_by_id(case_id)
@@ -152,7 +154,9 @@ class ReviewService:
         item.assigned_reviewer_id = new_reviewer_id
         item.assigned_by = actor.id
         item.assigned_at = now
-        item.status = ReviewQueueStatus.ASSIGNED.value # Revert to ASSIGNED so they must start review
+        item.status = (
+            ReviewQueueStatus.ASSIGNED.value
+        )  # Revert to ASSIGNED so they must start review
         item.version += 1
         item.updated_at = now
 
@@ -167,7 +171,9 @@ class ReviewService:
                 correlation_id=correlation_id,
                 outcome="SUCCESS",
                 detail={
-                    "old_reviewer_id": str(item.previous_reviewer_id) if item.previous_reviewer_id else None,
+                    "old_reviewer_id": str(item.previous_reviewer_id)
+                    if item.previous_reviewer_id
+                    else None,
                     "new_reviewer_id": str(new_reviewer_id),
                     "reason": reason,
                 },

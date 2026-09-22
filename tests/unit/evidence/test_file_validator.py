@@ -35,6 +35,23 @@ def test_validate_magic_signature() -> None:
         validator.validate_magic_signature(b"\x00\x01\x02\x03\x04")
 
 
+def test_validate_mime_consistency() -> None:
+    validator = FileValidator([".pdf"], 1024)
+
+    validator.validate_mime_consistency(
+        filename="synthetic.pdf",
+        declared_mime="application/pdf",
+        detected_mime="application/pdf",
+    )
+
+    with pytest.raises(MimeMismatchError):
+        validator.validate_mime_consistency(
+            filename="synthetic.pdf",
+            declared_mime="application/pdf",
+            detected_mime="application/x-dosexec",
+        )
+
+
 @pytest.mark.asyncio
 async def test_stream_and_validate() -> None:
     validator = FileValidator([".txt"], 15)  # Max 15 bytes

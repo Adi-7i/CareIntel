@@ -109,14 +109,14 @@ class EscalationService:
         correlation_id: str,
     ) -> EscalationRecordORM:
         if not AuthorizationPolicy.evaluate(actor, Permission.ESCALATION_WRITE):
-             raise AuthorizationError("Actor not authorized to resolve escalations.")
+            raise AuthorizationError("Actor not authorized to resolve escalations.")
 
         escalation = await self.review_repo.get_escalation(escalation_id)
         if not escalation:
             raise NotFoundError("Escalation record not found.")
 
         if escalation.status == EscalationStatus.RESOLVED.value:
-            return escalation # Idempotent
+            return escalation  # Idempotent
 
         case_id = escalation.case_id
 

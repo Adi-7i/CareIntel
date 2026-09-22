@@ -7,7 +7,7 @@ from __future__ import annotations
 import datetime
 import uuid
 
-from sqlalchemy import Boolean, ForeignKey, String, text
+from sqlalchemy import Boolean, DateTime, ForeignKey, String, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -30,6 +30,12 @@ class UserORM(Base, TimestampMixin):
     )
     is_verified: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default=text("false"), nullable=False
+    )
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=text("now()"), nullable=False
+    )
+    updated_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=text("now()"), nullable=False
     )
 
     roles: Mapped[list[RoleORM]] = relationship(
@@ -88,6 +94,7 @@ class UserRoleORM(Base):
         nullable=True,
     )
     granted_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True),
         server_default=text("now()"),
         nullable=False,
     )

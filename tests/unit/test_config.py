@@ -80,6 +80,41 @@ class TestSettings:
         )
         assert dev.is_production is False
 
+    def test_production_rejects_demo_provider_fallback(self) -> None:
+        """Production cannot silently run configured AI capabilities on demos."""
+        with pytest.raises(ValueError, match="LLM_PROVIDER"):
+            Settings(  # type: ignore[call-arg,arg-type]
+                _env_file=None,
+                app_env=Environment.PRODUCTION,
+                database_url="postgresql+asyncpg://u:p@h:5432/d",
+                secret_key="production-secret-key",
+                jwt_secret_key="production-jwt-secret-key",
+                azure_storage_connection_string="UseDevelopmentStorage=true",
+                redis_url="redis://redis.example:6379/0",
+            )
+
+    def test_production_accepts_fully_configured_external_providers(self) -> None:
+        """A complete external-provider configuration passes fail-closed guards."""
+        settings = Settings(  # type: ignore[call-arg,arg-type]
+            _env_file=None,
+            app_env=Environment.PRODUCTION,
+            database_url="postgresql+asyncpg://u:p@h:5432/d",
+            secret_key="production-secret-key",
+            jwt_secret_key="production-jwt-secret-key",
+            azure_storage_connection_string="UseDevelopmentStorage=true",
+            redis_url="redis://redis.example:6379/0",
+            llm_provider="azure_openai",
+            embedding_provider="azure_openai",
+            tts_provider="azure_openai",
+            stt_provider="azure_openai_transcribe",
+            ocr_provider="azure_document_intelligence",
+            azure_openai_api_key="synthetic-key",
+            azure_document_intelligence_endpoint="https://example.invalid",
+            azure_document_intelligence_key="synthetic-key",
+        )
+
+        assert settings.is_production is True
+
     def test_is_testing_flag(self) -> None:
         """is_testing returns True only for testing environment."""
         from careintel.core.config import Environment

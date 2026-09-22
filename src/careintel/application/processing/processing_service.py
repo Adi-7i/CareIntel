@@ -6,14 +6,23 @@ from __future__ import annotations
 
 import logging
 import uuid
+from typing import TYPE_CHECKING
 
+from careintel.application.auth.permission_service import PermissionService
 from careintel.application.processing.document_processor import DocumentProcessor
 from careintel.application.processing.extraction_processor import ExtractionProcessor
 from careintel.application.processing.language_processor import LanguageProcessor
 from careintel.application.processing.speech_processor import SpeechProcessor
 from careintel.domain.auth.models import UserContext
+from careintel.domain.auth.permissions import Permission
 from careintel.domain.processing.processing_commands import TriggerProcessingCommand
 from careintel.domain.processing.processor_type import ProcessorType
+
+if TYPE_CHECKING:
+    from careintel.application.workflow.task_service import AsyncTaskService
+    from careintel.persistence.repositories.case_repo import CaseRepository
+    from careintel.persistence.repositories.evidence_outbox_repo import EvidenceOutboxRepository
+    from careintel.persistence.repositories.evidence_repo import EvidenceRepository
 
 
 class ProcessingService:
@@ -27,6 +36,7 @@ class ProcessingService:
         extraction_processor: ExtractionProcessor,
         task_service: AsyncTaskService,
         evidence_repo: EvidenceRepository,
+        case_repo: CaseRepository,
         outbox_repo: EvidenceOutboxRepository,
     ) -> None:
         self.document_processor = document_processor
@@ -35,6 +45,7 @@ class ProcessingService:
         self.extraction_processor = extraction_processor
         self.task_service = task_service
         self.evidence_repo = evidence_repo
+        self.case_repo = case_repo
         self.outbox_repo = outbox_repo
         self.logger = logging.getLogger(__name__)
 
@@ -53,7 +64,19 @@ class ProcessingService:
         evidence = await self.evidence_repo.get_by_id(command.evidence_id)
         if not evidence:
             from careintel.core.errors import NotFoundError
+
             raise NotFoundError("Evidence not found")
+
+        case_orm = await self.case_repo.get_by_id(evidence.case_id)
+        if not case_orm:
+            from careintel.core.errors import NotFoundError
+
+            raise NotFoundError("Case not found")
+        PermissionService.check(
+            user,
+            Permission.PROCESSING_WRITE,
+            facility_scope=case_orm.facility_id,
+        )
 
         # 1. Create outbox event
         import datetime
@@ -90,7 +113,9 @@ class ProcessingService:
             ProcessorType.LANGUAGE_NORMALIZATION.value: "careintel.tasks.processing.run_processing",
             ProcessorType.CANDIDATE_EXTRACTION.value: "careintel.tasks.processing.run_processing",
         }
-        task_name = task_name_map.get(command.processor_type, "careintel.tasks.processing.run_processing")
+        task_name = task_name_map.get(
+            command.processor_type, "careintel.tasks.processing.run_processing"
+        )
 
         payload = AsyncTaskPayload(
             task_type=task_name,
@@ -110,4 +135,3 @@ class ProcessingService:
         )
 
         return task.id
-

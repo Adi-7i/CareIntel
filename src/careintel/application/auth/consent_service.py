@@ -4,8 +4,10 @@ Consent application service.
 
 from __future__ import annotations
 
+import datetime
 import uuid
 
+from careintel.core.errors import ConsentError
 from careintel.domain.audit.events import AuditEventType
 from careintel.domain.auth.models import UserContext
 from careintel.domain.consent.models import ConsentContext
@@ -100,9 +102,12 @@ class ConsentService:
         consent = await self.consent_repo.get_by_id(consent_id)
         if not consent:
             raise ValueError("Consent request not found.")
+        if consent.state != "REQUESTED":
+            raise ConsentError("Only a REQUESTED consent can be captured.")
 
         consent.state = "ACTIVE"
         consent.captured_by = actor.id
+        consent.captured_at = datetime.datetime.now(datetime.UTC)
 
         # we need to flush to get the current timestamp... let's just let SQLAlchemy handle it
         event = ConsentEventORM(
@@ -141,8 +146,11 @@ class ConsentService:
         consent = await self.consent_repo.get_by_id(consent_id)
         if not consent:
             raise ValueError("Consent request not found.")
+        if consent.state != "ACTIVE":
+            raise ConsentError("Only an ACTIVE consent can be withdrawn.")
 
         consent.state = "WITHDRAWN"
+        consent.withdrawn_at = datetime.datetime.now(datetime.UTC)
 
         event = ConsentEventORM(
             consent_id=consent.id,

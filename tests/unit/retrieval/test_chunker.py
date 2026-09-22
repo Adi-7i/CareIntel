@@ -1,6 +1,7 @@
 """
 Unit tests for the TextChunker.
 """
+
 import pytest
 
 from careintel.application.knowledge.chunker import TextChunker

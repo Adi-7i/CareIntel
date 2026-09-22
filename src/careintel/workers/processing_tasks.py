@@ -4,13 +4,13 @@ Thin Processing Tasks.
 
 import asyncio
 import uuid
+from typing import Any
 
 from celery.exceptions import SoftTimeLimitExceeded
 from celery.utils.log import get_task_logger
 
 from careintel.application.workflow.task_service import AsyncTaskService
-from careintel.core.errors import ServiceUnavailableError
-from careintel.domain.processing.processing_commands import TriggerProcessingCommand
+from careintel.core.errors import CapabilityNotImplementedError, ServiceUnavailableError
 from careintel.domain.workflow.task_states import AsyncTaskStatus
 from careintel.persistence.repositories.task_repo import AsyncTaskRepository
 from careintel.workers.celery_app import celery_app
@@ -30,12 +30,12 @@ logger = get_task_logger(__name__)
     retry_backoff_max=120,
     retry_jitter=True,
 )
-def run_processing(self, task_id: str) -> None:
+def run_processing(self: Any, task_id: str) -> None:
     """Run processing for an evidence."""
-    asyncio.run(_async_run_processing(self, task_id))
+    asyncio.run(_async_run_processing(task_id))
 
 
-async def _async_run_processing(celery_task, task_id_str: str) -> None:
+async def _async_run_processing(task_id_str: str) -> None:
     task_id = uuid.UUID(task_id_str)
     session_factory = get_session_factory()
 
@@ -67,27 +67,10 @@ async def _async_run_processing(celery_task, task_id_str: str) -> None:
             # svc = builder.build()
 
             # Context setup
-            with setup_worker_context(task.correlation_id, str(task.actor_id)) as actor:
-                # Mock execution for Phase 8 skeleton
-                logger.info(f"Executing processing task {task_id} for evidence {task.entity_id}")
-
-                # Mock command
-                cmd = TriggerProcessingCommand(
-                    evidence_id=task.entity_id,
-                    processor_type=task.payload.config.get("processor_type", "demo"),
-                    parameters=task.payload.config
+            with setup_worker_context(task.correlation_id, str(task.actor_id)):
+                raise CapabilityNotImplementedError(
+                    "Processing worker execution is not wired to the application service."
                 )
-
-                # await svc.trigger_processing(cmd, actor, task.correlation_id)
-                # Mock success
-                await asyncio.sleep(0.5)
-
-        # 3. Transition to SUCCEEDED
-        async with session_factory() as session:
-            task_repo = AsyncTaskRepository(session)
-            task_service = AsyncTaskService(task_repo)
-            await task_service.transition_status(task_id, AsyncTaskStatus.SUCCEEDED)
-            await session.commit()
 
     except SoftTimeLimitExceeded:
         logger.error(f"Task {task_id} exceeded time limit.")
@@ -97,13 +80,10 @@ async def _async_run_processing(celery_task, task_id_str: str) -> None:
             await task_service.transition_status(task_id, AsyncTaskStatus.FAILED)
             await session.commit()
         raise
-    except Exception as e:
-        logger.exception(f"Task {task_id} failed: {e}")
+    except Exception as exc:
         async with session_factory() as session:
-            task_repo = AsyncTaskRepository(session)
-            task_service = AsyncTaskService(task_repo)
-            # If we will retry, we don't mark FAILED yet. Celery handles retries.
-            # If max retries reached, Celery will raise MaxRetriesExceededError.
-            # But we can also track attempts in DB.
+            task_service = AsyncTaskService(AsyncTaskRepository(session))
+            await task_service.transition_status(task_id, AsyncTaskStatus.FAILED)
             await session.commit()
+        logger.error("Processing task failed", extra={"error_type": type(exc).__name__})
         raise

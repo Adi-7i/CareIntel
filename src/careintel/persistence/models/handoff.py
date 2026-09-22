@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import datetime
 import uuid
+from typing import Any
 
 from sqlalchemy import Boolean, ForeignKey, Index, Integer, String, Text, UniqueConstraint, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
@@ -24,7 +25,9 @@ class RecipientORM(Base):
     )
     name: Mapped[str] = mapped_column(String, nullable=False)
     recipient_type: Mapped[str] = mapped_column(String, nullable=False)
-    config_json: Mapped[dict] = mapped_column(JSONB, server_default=text("'{}'::jsonb"), nullable=False)
+    config_json: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, server_default=text("'{}'::jsonb"), nullable=False
+    )
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     created_at: Mapped[datetime.datetime] = mapped_column(
         server_default=text("now()"), nullable=False
@@ -53,7 +56,7 @@ class ReferralPackageORM(Base):
         ForeignKey("users.id"),
         nullable=False,
     )
-    content_json: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    content_json: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     evidence_ids: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
     status: Mapped[str] = mapped_column(String, nullable=False)
     superseded_by: Mapped[uuid.UUID | None] = mapped_column(

@@ -92,7 +92,4 @@ class DenseSearcher:
         )
 
         rows = result.fetchall()
-        return [
-            DenseSearchResult(chunk_id=row[0], dense_score=float(row[1]))
-            for row in rows
-        ]
+        return [DenseSearchResult(chunk_id=row[0], dense_score=float(row[1])) for row in rows]

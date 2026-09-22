@@ -8,7 +8,6 @@ from contextlib import contextmanager
 
 from careintel.core.correlation import _correlation_id_var
 from careintel.domain.auth.models import UserContext
-from careintel.domain.auth.roles import Role
 
 # System worker actor UUID (reserved).
 # In a real migration, this UUID would be seeded into the users table.
@@ -28,9 +27,10 @@ def setup_worker_context(correlation_id: str, actor_id: str) -> Generator[UserCo
         # For authorization, we yield the system worker context.
         worker_context = UserContext(
             id=SYSTEM_WORKER_ACTOR_ID,
-            email="worker@system.local",
-            roles=[Role.SYSTEM],
-            facilities=[],  # System has global override or we inject facility later
+            is_active=True,
+            roles={"system_worker"},
+            permissions=set(),
+            role_facilities={},
         )
         yield worker_context
     finally:

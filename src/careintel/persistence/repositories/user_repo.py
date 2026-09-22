@@ -10,7 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from careintel.persistence.models.user import RoleORM, UserORM
+from careintel.persistence.models.user import RoleORM, UserORM, UserRoleORM
 
 
 class UserRepository:
@@ -38,6 +38,19 @@ class UserRepository:
         stmt = select(UserORM).where(UserORM.email.ilike(email))
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
+
+    async def get_role_facilities(self, user_id: uuid.UUID) -> dict[str, uuid.UUID | None]:
+        """Return the explicit facility scope attached to each granted role."""
+        stmt = (
+            select(RoleORM.name, UserRoleORM.facility_id)
+            .join(UserRoleORM, UserRoleORM.role_id == RoleORM.id)
+            .where(UserRoleORM.user_id == user_id)
+        )
+        result = await self.session.execute(stmt)
+        role_facilities: dict[str, uuid.UUID | None] = {}
+        for role_name, facility_id in result.tuples():
+            role_facilities[role_name] = facility_id
+        return role_facilities
 
     async def create(self, user: UserORM) -> UserORM:
         """Create a new user."""

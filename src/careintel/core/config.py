@@ -174,82 +174,64 @@ class Settings(BaseSettings):
     # ── Azure OpenAI ─────────────────────────────────────────────────────────
     azure_openai_endpoint: str = Field(
         default="https://monarch.cognitiveservices.azure.com/",
-        description="Azure OpenAI base endpoint (Fixed)"
+        description="Azure OpenAI base endpoint (Fixed)",
     )
-    azure_openai_api_key: SecretStr | None = Field(
-        default=None,
-        description="Azure OpenAI API Key"
-    )
+    azure_openai_api_key: SecretStr | None = Field(default=None, description="Azure OpenAI API Key")
 
     azure_llm_deployment: str = Field(
-        default="gpt-5.6-luna",
-        description="Azure OpenAI deployment name for LLM"
+        default="gpt-5.6-luna", description="Azure OpenAI deployment name for LLM"
+    )
+    azure_llm_api_version: str = Field(
+        default="2024-08-01-preview",
+        description="Azure OpenAI API version used for structured chat completions",
     )
     azure_embedding_deployment: str = Field(
-        default="text-embedding-3-small",
-        description="Azure OpenAI deployment name for Embeddings"
+        default="text-embedding-3-small", description="Azure OpenAI deployment name for Embeddings"
     )
     azure_stt_deployment: str = Field(
         default="gpt-4o-mini-transcribe",
-        description="Azure OpenAI deployment name for standard STT"
+        description="Azure OpenAI deployment name for standard STT",
     )
     azure_stt_diarize_deployment: str = Field(
         default="gpt-4o-transcribe-diarize",
-        description="Azure OpenAI deployment name for Diarization STT"
+        description="Azure OpenAI deployment name for Diarization STT",
     )
     azure_tts_deployment: str = Field(
-        default="tts-hd",
-        description="Azure OpenAI deployment name for TTS"
+        default="tts-hd", description="Azure OpenAI deployment name for TTS"
     )
-    azure_tts_voice: str = Field(
-        default="nova",
-        description="Voice to use for TTS"
-    )
+    azure_tts_voice: str = Field(default="nova", description="Voice to use for TTS")
     azure_stt_api_version: str = Field(
-        default="2025-03-01-preview",
-        description="Fixed API version for standard STT"
+        default="2025-03-01-preview", description="Fixed API version for standard STT"
     )
     azure_stt_diarize_api_version: str = Field(
-        default="2025-03-01-preview",
-        description="Fixed API version for Diarization STT"
+        default="2025-03-01-preview", description="Fixed API version for Diarization STT"
     )
     azure_tts_api_version: str = Field(
-        default="2025-03-01-preview",
-        description="Fixed API version for TTS"
+        default="2025-03-01-preview", description="Fixed API version for TTS"
     )
 
     # ── Azure Document Intelligence ──────────────────────────────────────────
     azure_document_intelligence_endpoint: str | None = Field(
-        default=None,
-        description="Azure Document Intelligence endpoint"
+        default=None, description="Azure Document Intelligence endpoint"
     )
     azure_document_intelligence_key: SecretStr | None = Field(
-        default=None,
-        description="Azure Document Intelligence API key"
+        default=None, description="Azure Document Intelligence API key"
     )
     azure_di_model: str = Field(
         default="prebuilt-layout",
-        description="Azure Document Intelligence model (prebuilt-layout, prebuilt-read)"
+        description="Azure Document Intelligence model (prebuilt-layout, prebuilt-read)",
     )
 
-    llm_provider: str = Field(
-        default="demo",
-        description="LLM provider: demo, azure_openai"
-    )
+    llm_provider: str = Field(default="demo", description="LLM provider: demo, azure_openai")
     llm_timeout_seconds: int = Field(
-        default=120,
-        description="Timeout for LLM generation in seconds"
+        default=120, description="Timeout for LLM generation in seconds"
     )
 
     embedding_provider: str = Field(
-        default="demo",
-        description="Embedding provider: demo, azure_openai"
+        default="demo", description="Embedding provider: demo, azure_openai"
     )
 
-    tts_provider: str = Field(
-        default="demo",
-        description="TTS provider: demo, azure_openai"
-    )
+    tts_provider: str = Field(default="demo", description="TTS provider: demo, azure_openai")
 
     ocr_provider: str = Field(
         default="demo",
@@ -290,8 +272,7 @@ class Settings(BaseSettings):
 
     # ── Async Execution & Celery (Phase 8 & 12) ────────
     redis_url: SecretStr | None = Field(
-        default=None,
-        description="Canonical Redis URL for caching, brokering, and async infra."
+        default=None, description="Canonical Redis URL for caching, brokering, and async infra."
     )
     celery_broker_url: SecretStr = Field(default=SecretStr("redis://localhost:6379/0"))
     celery_result_backend: SecretStr | None = Field(default=None)
@@ -355,6 +336,43 @@ class Settings(BaseSettings):
                 raise ValueError("AZURE_STORAGE_CONNECTION_STRING must be set in production.")
             if not self.redis_url:
                 raise ValueError("REDIS_URL must be set in production.")
+        return self
+
+    @model_validator(mode="after")
+    def _reject_demo_or_unconfigured_providers_in_production(self) -> Settings:
+        """Prevent silent demo-provider fallback in production."""
+        if self.app_env != Environment.PRODUCTION:
+            return self
+
+        invalid: list[str] = []
+        if self.llm_provider != "azure_openai" or not self.azure_openai_api_key:
+            invalid.append("LLM_PROVIDER")
+        if self.embedding_provider != "azure_openai" or not self.azure_openai_api_key:
+            invalid.append("EMBEDDING_PROVIDER")
+        if self.tts_provider != "azure_openai" or not self.azure_openai_api_key:
+            invalid.append("TTS_PROVIDER")
+        if (
+            self.stt_provider
+            not in {
+                "azure_openai_transcribe",
+                "azure_openai_diarize",
+            }
+            or not self.azure_openai_api_key
+        ):
+            invalid.append("STT_PROVIDER")
+        if (
+            self.ocr_provider != "azure_document_intelligence"
+            or not self.azure_document_intelligence_endpoint
+            or not self.azure_document_intelligence_key
+        ):
+            invalid.append("OCR_PROVIDER")
+
+        if invalid:
+            fields = ", ".join(invalid)
+            raise ValueError(
+                "Production provider configuration must use fully configured external "
+                f"adapters; invalid or incomplete settings: {fields}."
+            )
         return self
 
     # ── Convenience properties ────────────────────────────────────────────────

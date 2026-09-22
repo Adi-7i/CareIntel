@@ -11,7 +11,7 @@ from sqlalchemy import Date, Float, ForeignKey, Index, Integer, String, Text, Un
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
-from careintel.persistence.base import Base
+from careintel.persistence.base import Base, TimestampMixin
 
 
 class StructuringRunORM(Base):
@@ -48,7 +48,7 @@ class StructuringRunORM(Base):
     )
 
 
-class TimelineEventORM(Base):
+class TimelineEventORM(Base, TimestampMixin):
     __tablename__ = "timeline_events"
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -106,17 +106,13 @@ class TimelineEventORM(Base):
         nullable=False,
     )
     version: Mapped[int] = mapped_column(Integer, nullable=False)
-    created_at: Mapped[datetime.datetime] = mapped_column(
-        server_default=text("now()"), nullable=False
-    )
-
     __table_args__ = (
         Index("ix_timeline_event_case", "case_id"),
         Index("ix_timeline_event_evidence", "evidence_id"),
     )
 
 
-class ConflictRecordORM(Base):
+class ConflictRecordORM(Base, TimestampMixin):
     __tablename__ = "conflict_records"
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -140,7 +136,7 @@ class ConflictRecordORM(Base):
     __table_args__ = (Index("ix_conflict_record_case_field", "case_id", "field_type"),)
 
 
-class ConflictCandidateLinkORM(Base):
+class ConflictCandidateLinkORM(Base, TimestampMixin):
     __tablename__ = "conflict_candidate_links"
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -164,7 +160,7 @@ class ConflictCandidateLinkORM(Base):
     )
 
 
-class ChecklistPolicyVersionORM(Base):
+class ChecklistPolicyVersionORM(Base, TimestampMixin):
     __tablename__ = "checklist_policy_versions"
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -173,12 +169,9 @@ class ChecklistPolicyVersionORM(Base):
         server_default=text("gen_random_uuid()"),
     )
     version_key: Mapped[str] = mapped_column(String, nullable=False, unique=True)
-    created_at: Mapped[datetime.datetime] = mapped_column(
-        server_default=text("now()"), nullable=False
-    )
 
 
-class MissingInfoItemORM(Base):
+class MissingInfoItemORM(Base, TimestampMixin):
     __tablename__ = "missing_info_items"
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -201,10 +194,6 @@ class MissingInfoItemORM(Base):
     status: Mapped[str] = mapped_column(String, nullable=False)
     materiality: Mapped[str] = mapped_column(String, nullable=False)
     resolution: Mapped[str | None] = mapped_column(String, nullable=True)
-    created_at: Mapped[datetime.datetime] = mapped_column(
-        server_default=text("now()"), nullable=False
-    )
-
     __table_args__ = (
         UniqueConstraint(
             "evaluation_run_id", "requirement_key", name="uq_missing_info_requirement"
@@ -212,7 +201,7 @@ class MissingInfoItemORM(Base):
     )
 
 
-class ClarificationQuestionORM(Base):
+class ClarificationQuestionORM(Base, TimestampMixin):
     __tablename__ = "clarification_questions"
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -240,10 +229,6 @@ class ClarificationQuestionORM(Base):
     round_number: Mapped[int] = mapped_column(Integer, nullable=False)
     status: Mapped[str] = mapped_column(String, nullable=False)
     generator_version: Mapped[str] = mapped_column(String, nullable=False)
-    created_at: Mapped[datetime.datetime] = mapped_column(
-        server_default=text("now()"), nullable=False
-    )
-
     __table_args__ = (
         UniqueConstraint("evaluation_run_id", "requirement_key", name="uq_question_requirement"),
     )
