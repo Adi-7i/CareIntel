@@ -76,6 +76,10 @@ def run_migrations_offline() -> None:
 
 def do_run_migrations(connection: Connection) -> None:
     """Execute migrations within a sync connection (called from async context)."""
+    # Supabase installs extensions in the 'extensions' schema.
+    # Setting search_path ensures the vector type is resolvable from public schema.
+    from sqlalchemy import text
+    connection.execute(text("SET search_path TO public, extensions"))
     context.configure(
         connection=connection,
         target_metadata=target_metadata,
@@ -101,6 +105,7 @@ async def run_async_migrations() -> None:
 
     async with connectable.connect() as connection:
         await connection.run_sync(do_run_migrations)
+        await connection.commit()
 
     await connectable.dispose()
 
