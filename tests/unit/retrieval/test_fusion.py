@@ -7,7 +7,7 @@ import uuid
 import pytest
 
 from careintel.application.retrieval.dense_search import DenseSearchResult
-from careintel.application.retrieval.fusion import FusedCandidate, RRFFusion
+from careintel.application.retrieval.fusion import RRFFusion
 from careintel.application.retrieval.sparse_search import SparseSearchResult
 
 

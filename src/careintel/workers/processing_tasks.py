@@ -8,7 +8,6 @@ import uuid
 from celery.exceptions import SoftTimeLimitExceeded
 from celery.utils.log import get_task_logger
 
-from careintel.application.processing.processing_service import ProcessingService
 from careintel.application.workflow.task_service import AsyncTaskService
 from careintel.core.errors import ServiceUnavailableError
 from careintel.domain.processing.processing_commands import TriggerProcessingCommand
@@ -23,7 +22,7 @@ logger = get_task_logger(__name__)
 
 # The task is a synchronous wrapper around an async function
 @celery_app.task(
-    bind=True, 
+    bind=True,
     name="careintel.tasks.processing.run_processing",
     autoretry_for=(ServiceUnavailableError, TimeoutError),
     retry_kwargs={"max_retries": 3},
@@ -39,25 +38,25 @@ def run_processing(self, task_id: str) -> None:
 async def _async_run_processing(celery_task, task_id_str: str) -> None:
     task_id = uuid.UUID(task_id_str)
     session_factory = get_session_factory()
-    
+
     async with session_factory() as session:
         task_repo = AsyncTaskRepository(session)
         task_service = AsyncTaskService(task_repo)
-        
+
         # 1. Load task and check idempotency
         task = await task_service.get_task(task_id)
         if not task:
             logger.error(f"Task {task_id} not found.")
             return
-            
+
         if task.status in (AsyncTaskStatus.SUCCEEDED, AsyncTaskStatus.CANCELLED):
             logger.info(f"Task {task_id} already completed (status: {task.status}).")
             return
-            
+
         # 2. Transition to RUNNING
         await task_service.transition_status(task_id, AsyncTaskStatus.RUNNING)
         await session.commit()
-        
+
     # Run the actual work in a fresh session to keep transactions short
     try:
         async with session_factory() as session:
@@ -66,19 +65,19 @@ async def _async_run_processing(celery_task, task_id_str: str) -> None:
             # In a real app, a DI container or explicit builder function is used.
             # builder = ProcessingServiceBuilder(session)
             # svc = builder.build()
-            
+
             # Context setup
             with setup_worker_context(task.correlation_id, str(task.actor_id)) as actor:
                 # Mock execution for Phase 8 skeleton
                 logger.info(f"Executing processing task {task_id} for evidence {task.entity_id}")
-                
+
                 # Mock command
                 cmd = TriggerProcessingCommand(
                     evidence_id=task.entity_id,
                     processor_type=task.payload.config.get("processor_type", "demo"),
                     parameters=task.payload.config
                 )
-                
+
                 # await svc.trigger_processing(cmd, actor, task.correlation_id)
                 # Mock success
                 await asyncio.sleep(0.5)
@@ -89,7 +88,7 @@ async def _async_run_processing(celery_task, task_id_str: str) -> None:
             task_service = AsyncTaskService(task_repo)
             await task_service.transition_status(task_id, AsyncTaskStatus.SUCCEEDED)
             await session.commit()
-            
+
     except SoftTimeLimitExceeded:
         logger.error(f"Task {task_id} exceeded time limit.")
         async with session_factory() as session:

@@ -102,7 +102,7 @@ class AsyncTaskService:
             return None
 
         TaskStateMachine.validate_transition(orm.status, to_status)
-        
+
         await self.task_repo.update_status(task_id, to_status)
         orm.status = to_status.value
         return self._to_domain(orm)
@@ -118,7 +118,7 @@ class AsyncTaskService:
         """
         threshold = datetime.datetime.now(datetime.UTC) - datetime.timedelta(seconds=stale_threshold_seconds)
         stale_orms = await self.task_repo.find_stale_tasks(threshold)
-        
+
         recovered_ids = []
         for orm in stale_orms:
             try:

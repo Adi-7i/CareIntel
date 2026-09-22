@@ -8,7 +8,7 @@ import logging
 from collections.abc import Sequence
 from typing import Any
 
-from sqlalchemy import select, text
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from careintel.application.workflow.task_service import AsyncTaskService
@@ -55,34 +55,34 @@ class UnifiedOutboxDispatcher:
                 # 2. Map event to TaskPayload
                 # We do this based on the event_type mapping to a Celery task.
                 task_name = self._map_event_to_task_name(event.event_type)
-                
+
                 if not task_name:
                     # Not all events trigger async tasks.
                     # Just mark as published and skip task creation.
                     event.published_at = now
                     processed += 1
                     continue
-                
+
                 payload = self._build_payload(event, task_name)
-                
+
                 # 3. Idempotently create task
                 task = await self.task_service.get_or_create_task(
                     idempotency_key=f"outbox_{event.id}",
                     payload=payload,
                     causation_id=event.id
                 )
-                
+
                 # 4. Dispatch to Celery
                 celery_app.send_task(
                     task_name,
                     kwargs={"task_id": str(task.id)},
                     queue=self._route_task(task_name),
                 )
-                
+
                 # 5. Mark outbox published & task queued
                 event.published_at = now
                 await self.task_service.transition_status(task.id, "QUEUED")
-                
+
                 processed += 1
             except Exception as e:
                 logger.exception(f"Failed to process outbox event {event.id}: {e}")
@@ -144,19 +144,19 @@ class UnifiedOutboxDispatcher:
     async def poll_forever(self, interval_seconds: float = 2.0) -> None:
         """Run the polling loop indefinitely."""
         logger.info("Outbox Dispatcher starting polling loop.")
-        
+
         loops_since_sweep = 0
-        
+
         while True:
             try:
                 # Use a fresh session for each iteration
                 async with self.session_factory() as session:
                     case_processed = await self._process_batch(session, CaseOutboxORM)
                     evidence_processed = await self._process_batch(session, EvidenceOutboxORM)
-                    
+
                     if case_processed > 0 or evidence_processed > 0:
                         logger.debug(f"Dispatched {case_processed} case events, {evidence_processed} evidence events.")
-                
+
                 # Periodically trigger stale sweep (e.g. every 60 seconds)
                 loops_since_sweep += 1
                 if loops_since_sweep * interval_seconds >= 60:

@@ -20,6 +20,7 @@ from fastapi import Depends, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from careintel.application.audio.speech_service import SpeechService
 from careintel.application.auth.auth_service import AuthService
 from careintel.application.auth.password_hasher import PasswordHasher
 from careintel.application.auth.permission_service import PermissionService
@@ -93,6 +94,7 @@ DbSessionDep = Annotated[AsyncSession, Depends(_db_session_provider)]
 
 from careintel.application.auth.consent_service import ConsentService
 from careintel.persistence.repositories.consent_repo import ConsentRepository
+
 
 def get_consent_service(session: DbSessionDep) -> ConsentService:
     return ConsentService(
@@ -299,4 +301,20 @@ def get_processing_service(
         task_service=task_service,
         evidence_repo=evidence_repo,
         outbox_repo=outbox_repo,
+    )
+
+
+# ── Speech / TTS Services ──────────────────────────────────────────────────────
+
+
+
+def get_speech_service(
+    request: Request,
+    session: DbSessionDep,
+) -> SpeechService:
+    """Dependency provider for SpeechService."""
+    provider = request.app.state.tts_provider
+    return SpeechService(
+        tts_provider=provider,
+        audit_repo=AuditRepository(session),
     )

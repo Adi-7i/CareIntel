@@ -1,0 +1,17 @@
+"""
+Handoff states and enums.
+"""
+
+from enum import StrEnum
+
+
+class HandoffStatus(StrEnum):
+    DRAFT = "DRAFT"
+    READY = "READY"
+    SENDING = "SENDING"
+    SENT = "SENT"
+    ACKNOWLEDGEMENT_PENDING = "ACKNOWLEDGEMENT_PENDING"
+    ACKNOWLEDGED = "ACKNOWLEDGED"
+    COMPLETED = "COMPLETED"
+    DELIVERY_FAILED = "DELIVERY_FAILED"
+    CANCELLED = "CANCELLED"

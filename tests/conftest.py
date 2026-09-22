@@ -75,12 +75,14 @@ def app(mock_engine: MagicMock, mock_session_factory: MagicMock) -> Any:
     The database engine and session factory are replaced with mocks so
     API/unit tests do not require a live database.
     """
+    from careintel.infrastructure.storage.fake_provider import FakeBlobProvider
     from careintel.main import create_app
 
     test_app = create_app()
     # Override app.state so health/readiness checks use the mock engine
     test_app.state.db_engine = mock_engine
     test_app.state.db_session_factory = mock_session_factory
+    test_app.state.blob_provider = FakeBlobProvider()
     return test_app
 
 

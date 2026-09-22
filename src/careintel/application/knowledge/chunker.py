@@ -50,10 +50,10 @@ class TextChunker:
     def _load_tiktoken() -> object | None:
         """Attempt to load tiktoken encoder; return None if unavailable."""
         try:
-            import tiktoken  # noqa: PLC0415
+            import tiktoken
 
             return tiktoken.get_encoding("cl100k_base")
-        except Exception:  # noqa: BLE001
+        except Exception:
             return None
 
     def _count_tokens(self, text: str) -> int:

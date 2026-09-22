@@ -4,9 +4,8 @@ Task API schemas.
 
 import datetime
 import uuid
-from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict
 
 
 class AsyncTaskResponse(BaseModel):
@@ -20,10 +19,10 @@ class AsyncTaskResponse(BaseModel):
     entity_type: str
     entity_id: uuid.UUID
     correlation_id: str
-    
+
     error_category: str | None = None
     failure_reason: str | None = None
-    
+
     created_at: datetime.datetime
     queued_at: datetime.datetime | None = None
     started_at: datetime.datetime | None = None

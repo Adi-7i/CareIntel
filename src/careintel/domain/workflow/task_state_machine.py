@@ -14,8 +14,8 @@ class TaskStateMachine:
     """
 
     TERMINAL_STATES = frozenset({
-        AsyncTaskStatus.SUCCEEDED, 
-        AsyncTaskStatus.FAILED, 
+        AsyncTaskStatus.SUCCEEDED,
+        AsyncTaskStatus.FAILED,
         AsyncTaskStatus.CANCELLED
     })
 

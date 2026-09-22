@@ -11,7 +11,6 @@ from careintel.application.processing.document_processor import DocumentProcesso
 from careintel.application.processing.extraction_processor import ExtractionProcessor
 from careintel.application.processing.language_processor import LanguageProcessor
 from careintel.application.processing.speech_processor import SpeechProcessor
-from careintel.core.errors import CareIntelError
 from careintel.domain.auth.models import UserContext
 from careintel.domain.processing.processing_commands import TriggerProcessingCommand
 from careintel.domain.processing.processor_type import ProcessorType
@@ -50,7 +49,7 @@ class ProcessingService:
         self.logger.info(
             f"Dispatching {command.processor_type} processing for evidence {command.evidence_id}"
         )
-        
+
         evidence = await self.evidence_repo.get_by_id(command.evidence_id)
         if not evidence:
             from careintel.core.errors import NotFoundError
@@ -58,9 +57,11 @@ class ProcessingService:
 
         # 1. Create outbox event
         import datetime
+
         from ulid import ULID
+
         from careintel.persistence.models.evidence import EvidenceOutboxORM
-        
+
         now = datetime.datetime.now(datetime.UTC)
         outbox_event = EvidenceOutboxORM(
             id=str(ULID()),
@@ -72,7 +73,6 @@ class ProcessingService:
             evidence_id=command.evidence_id,
             case_id=evidence.case_id,
             actor_id=user.id,
-            aggregate_version=evidence.version,
             payload={
                 "processor_type": command.processor_type,
                 "config_version": command.parameters.get("config_version", "v1"),
@@ -83,7 +83,7 @@ class ProcessingService:
 
         # 2. Create Task payload directly
         from careintel.domain.workflow.models import AsyncTaskPayload
-        
+
         task_name_map = {
             ProcessorType.DOCUMENT_OCR.value: "careintel.tasks.processing.run_processing",
             ProcessorType.SPEECH_TRANSCRIPTION.value: "careintel.tasks.processing.run_processing",
@@ -108,6 +108,6 @@ class ProcessingService:
             payload=payload,
             causation_id=outbox_event.id,
         )
-        
+
         return task.id
 

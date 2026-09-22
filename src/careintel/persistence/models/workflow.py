@@ -28,10 +28,10 @@ class AsyncTaskORM(Base):
     )
     task_type: Mapped[str] = mapped_column(String, nullable=False)
     task_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
-    
+
     # SHA-256 of (task_type + entity_id + case_id + config)
     idempotency_key: Mapped[str] = mapped_column(String, nullable=False)
-    
+
     case_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("cases.id", ondelete="CASCADE"),
@@ -46,19 +46,19 @@ class AsyncTaskORM(Base):
     )
     correlation_id: Mapped[str] = mapped_column(String, nullable=False)
     causation_id: Mapped[str | None] = mapped_column(String, nullable=True)
-    
+
     # PENDING, QUEUED, RUNNING, SUCCEEDED, FAILED, CANCELLED
     status: Mapped[str] = mapped_column(String, nullable=False, default="PENDING")
-    
+
     attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     max_attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=3)
     celery_task_id: Mapped[str | None] = mapped_column(String, nullable=True)
-    
+
     payload_json: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     result_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     error_category: Mapped[str | None] = mapped_column(String, nullable=True)
     failure_reason: Mapped[str | None] = mapped_column(String, nullable=True)
-    
+
     created_at: Mapped[datetime.datetime] = mapped_column(
         server_default=text("now()"), nullable=False
     )

@@ -10,7 +10,6 @@ from fastapi import APIRouter, Depends, Request
 from careintel.api.v1.tasks.schemas import AsyncTaskResponse
 from careintel.application.workflow.task_service import AsyncTaskService
 from careintel.core.errors import NotFoundError
-from careintel.domain.auth.models import UserContext
 from careintel.persistence.repositories.task_repo import AsyncTaskRepository
 
 router = APIRouter(tags=["tasks"])
@@ -39,7 +38,7 @@ async def get_task(
     task = await task_service.get_task(task_id)
     if not task:
         raise NotFoundError("Task not found")
-        
+
     return AsyncTaskResponse.model_validate(task)
 
 
