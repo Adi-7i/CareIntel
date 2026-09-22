@@ -20,6 +20,7 @@ from fastapi import Depends, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from careintel.application.audio.speech_service import SpeechService
 from careintel.application.auth.auth_service import AuthService
 from careintel.application.auth.password_hasher import PasswordHasher
 from careintel.application.auth.permission_service import PermissionService
@@ -27,6 +28,7 @@ from careintel.application.auth.token_service import JWTService
 from careintel.application.case.case_service import CaseService
 from careintel.application.evidence.evidence_service import EvidenceService
 from careintel.application.evidence.file_validator import FileValidator
+from careintel.application.knowledge.knowledge_service import KnowledgeService
 from careintel.application.processing.document_processor import DocumentProcessor
 from careintel.application.processing.extraction_processor import ExtractionProcessor
 from careintel.application.processing.language_processor import LanguageProcessor
@@ -299,4 +301,21 @@ def get_processing_service(
         task_service=task_service,
         evidence_repo=evidence_repo,
         outbox_repo=outbox_repo,
+    )
+
+
+# ── Speech / TTS Services ──────────────────────────────────────────────────────
+
+from careintel.application.audio.speech_service import SpeechService
+
+
+def get_speech_service(
+    request: Request,
+    session: DbSessionDep,
+) -> SpeechService:
+    """Dependency provider for SpeechService."""
+    provider = request.app.state.tts_provider
+    return SpeechService(
+        tts_provider=provider,
+        audit_repo=AuditRepository(session),
     )

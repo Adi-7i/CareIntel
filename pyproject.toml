@@ -28,6 +28,7 @@ dependencies = [
     "azure-storage-blob>=12.20.0",
     "python-multipart>=0.0.9",
     "python-magic>=0.4.27",
+    "azure-ai-documentintelligence>=1.0.0",
     "pgvector>=0.3.0",
     "openai>=1.40.0",
     "tiktoken>=0.7.0",

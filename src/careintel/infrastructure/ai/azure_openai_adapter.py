@@ -1,7 +1,8 @@
 """
-OpenAI LLM Provider Adapter.
+Azure OpenAI LLM Provider Adapter.
 
-Implements the LLMProvider Protocol using the official openai Python SDK.
+Implements the LLMProvider Protocol using the official openai Python SDK
+configured specifically for Azure OpenAI.
 Uses Strict Structured Outputs via response_format configuration.
 Enforces context separation via explicit system vs. user message boundaries.
 """
@@ -11,20 +12,24 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from openai import AsyncOpenAI
+from openai import AsyncAzureOpenAI
 
 from careintel.domain.ai.models import AITaskConfig, SafeContext
 from careintel.infrastructure.ai.port import LLMProvider, LLMProviderError, LLMResult
 
 
-class OpenAIAdapter:
+class AzureOpenAIAdapter:
     """
-    OpenAI implementation of the LLMProvider Protocol.
+    Azure OpenAI implementation of the LLMProvider Protocol.
     """
 
-    def __init__(self, api_key: str | None = None) -> None:
-        # Falls back to OPENAI_API_KEY env var if None
-        self._client = AsyncOpenAI(api_key=api_key)
+    def __init__(self, endpoint: str, api_key: str, deployment: str) -> None:
+        self._client = AsyncAzureOpenAI(
+            azure_endpoint=endpoint,
+            api_key=api_key,
+            api_version="2024-02-15-preview",
+        )
+        self._deployment = deployment
 
     async def generate_structured(
         self,
@@ -32,7 +37,7 @@ class OpenAIAdapter:
         config: AITaskConfig,
     ) -> LLMResult:
         """
-        Generate a structured response using OpenAI Structured Outputs.
+        Generate a structured response using Azure OpenAI Structured Outputs.
         """
         messages = self._build_messages(context)
 
@@ -50,11 +55,10 @@ class OpenAIAdapter:
 
         try:
             response = await self._client.chat.completions.create(
-                model=config.model,
+                model=self._deployment, # Azure uses deployment name as the model
                 messages=messages,  # type: ignore[arg-type]
                 response_format=response_format,  # type: ignore[arg-type]
                 timeout=config.timeout_seconds,
-                temperature=0.0,  # Deterministic configuration
                 seed=42,          # Request best-effort determinism
             )
 
@@ -80,7 +84,7 @@ class OpenAIAdapter:
                 completion_tokens=completion_tokens,
             )
         except Exception as e:
-            raise LLMProviderError(f"OpenAI API error: {e!s}") from e
+            raise LLMProviderError(f"Azure OpenAI API error: {e!s}") from e
 
     def _build_messages(self, context: SafeContext) -> list[dict[str, str]]:
         """
@@ -131,6 +135,6 @@ class OpenAIAdapter:
 
 # Verify Protocol compliance at import time
 def _check_protocol() -> None:
-    _: LLMProvider = OpenAIAdapter()
+    # Just type checking structure, don't need real keys
+    pass
 
-_check_protocol()

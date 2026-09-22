@@ -171,9 +171,89 @@ class Settings(BaseSettings):
     )
 
     # ── Processing & Providers ───────────────────────────────────────────────
+    # ── Azure OpenAI ─────────────────────────────────────────────────────────
+    azure_openai_endpoint: str = Field(
+        default="https://monarch.cognitiveservices.azure.com/",
+        description="Azure OpenAI base endpoint (Fixed)"
+    )
+    azure_openai_api_key: SecretStr | None = Field(
+        default=None,
+        description="Azure OpenAI API Key"
+    )
+
+    azure_llm_deployment: str = Field(
+        default="gpt-5.6-luna",
+        description="Azure OpenAI deployment name for LLM"
+    )
+    azure_embedding_deployment: str = Field(
+        default="text-embedding-3-small",
+        description="Azure OpenAI deployment name for Embeddings"
+    )
+    azure_stt_deployment: str = Field(
+        default="gpt-4o-mini-transcribe",
+        description="Azure OpenAI deployment name for standard STT"
+    )
+    azure_stt_diarize_deployment: str = Field(
+        default="gpt-4o-transcribe-diarize",
+        description="Azure OpenAI deployment name for Diarization STT"
+    )
+    azure_tts_deployment: str = Field(
+        default="tts-hd",
+        description="Azure OpenAI deployment name for TTS"
+    )
+    azure_tts_voice: str = Field(
+        default="nova",
+        description="Voice to use for TTS"
+    )
+    azure_stt_api_version: str = Field(
+        default="2025-03-01-preview",
+        description="Fixed API version for standard STT"
+    )
+    azure_stt_diarize_api_version: str = Field(
+        default="2025-03-01-preview",
+        description="Fixed API version for Diarization STT"
+    )
+    azure_tts_api_version: str = Field(
+        default="2025-03-01-preview",
+        description="Fixed API version for TTS"
+    )
+
+    # ── Azure Document Intelligence ──────────────────────────────────────────
+    azure_document_intelligence_endpoint: str | None = Field(
+        default=None,
+        description="Azure Document Intelligence endpoint"
+    )
+    azure_document_intelligence_key: SecretStr | None = Field(
+        default=None,
+        description="Azure Document Intelligence API key"
+    )
+    azure_di_model: str = Field(
+        default="prebuilt-layout",
+        description="Azure Document Intelligence model (prebuilt-layout, prebuilt-read)"
+    )
+
+    llm_provider: str = Field(
+        default="demo",
+        description="LLM provider: demo, azure_openai"
+    )
+    llm_timeout_seconds: int = Field(
+        default=120,
+        description="Timeout for LLM generation in seconds"
+    )
+
+    embedding_provider: str = Field(
+        default="demo",
+        description="Embedding provider: demo, azure_openai"
+    )
+
+    tts_provider: str = Field(
+        default="demo",
+        description="TTS provider: demo, azure_openai"
+    )
+
     ocr_provider: str = Field(
         default="demo",
-        description="OCR provider: demo, paddle, azure_doc_intelligence",
+        description="OCR provider: demo, paddle, azure_document_intelligence",
     )
     ocr_temp_workspace: str = Field(
         default="/tmp/careintel_ocr",  # noqa: S108
@@ -182,7 +262,7 @@ class Settings(BaseSettings):
 
     stt_provider: str = Field(
         default="demo",
-        description="STT provider: demo, azure_speech, whisper",
+        description="STT provider: demo, azure_openai_transcribe, azure_openai_diarize",
     )
 
     language_detection_provider: str = Field(

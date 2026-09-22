@@ -76,9 +76,73 @@ def create_app() -> FastAPI:
         # Initialize Scanner
         _app.state.content_scanner = NoOpScanner()
 
-        # Initialize Phase 5 Providers
-        _app.state.ocr_provider = DemoOcrProvider()
-        _app.state.speech_provider = DemoSpeechProvider()
+        # Initialize Providers
+        # ── LLM Provider ──────────────────────────────────────────────────────────
+        if settings.llm_provider == "azure_openai" and settings.azure_openai_api_key:
+            from careintel.infrastructure.ai.azure_openai_adapter import AzureOpenAIAdapter
+            _app.state.llm_provider = AzureOpenAIAdapter(
+                endpoint=settings.azure_openai_endpoint,
+                api_key=settings.azure_openai_api_key.get_secret_value(),
+                deployment=settings.azure_llm_deployment,
+            )
+        else:
+            from careintel.infrastructure.ai.demo_adapter import DemoLLMProvider
+            _app.state.llm_provider = DemoLLMProvider()
+
+        # ── Embedding Provider ────────────────────────────────────────────────────
+        if settings.embedding_provider == "azure_openai" and settings.azure_openai_api_key:
+            from careintel.infrastructure.embedding.azure_provider import AzureEmbeddingProvider
+            _app.state.embedding_provider = AzureEmbeddingProvider(
+                endpoint=settings.azure_openai_endpoint,
+                api_key=settings.azure_openai_api_key.get_secret_value(),
+                deployment=settings.azure_embedding_deployment,
+            )
+        else:
+            from careintel.infrastructure.embedding.demo_provider import DemoEmbeddingProvider
+            _app.state.embedding_provider = DemoEmbeddingProvider()
+
+        # ── STT Provider ──────────────────────────────────────────────────────────
+        if settings.stt_provider in ("azure_openai_transcribe", "azure_openai_diarize") and settings.azure_openai_api_key:
+            from careintel.infrastructure.stt.azure_provider import AzureSpeechProvider
+            mode = "diarize" if settings.stt_provider == "azure_openai_diarize" else "transcribe"
+            deployment = settings.azure_stt_diarize_deployment if mode == "diarize" else settings.azure_stt_deployment
+            api_version = settings.azure_stt_diarize_api_version if mode == "diarize" else settings.azure_stt_api_version
+            _app.state.speech_provider = AzureSpeechProvider(
+                endpoint=settings.azure_openai_endpoint,
+                api_key=settings.azure_openai_api_key.get_secret_value(),
+                api_version=api_version,
+                deployment=deployment,
+                mode=mode,
+            )
+        else:
+            _app.state.speech_provider = DemoSpeechProvider()
+
+        # ── TTS Provider ──────────────────────────────────────────────────────────
+        if settings.tts_provider == "azure_openai" and settings.azure_openai_api_key:
+            from careintel.infrastructure.tts.azure_provider import AzureTTSProvider
+            _app.state.tts_provider = AzureTTSProvider(
+                endpoint=settings.azure_openai_endpoint,
+                api_key=settings.azure_openai_api_key.get_secret_value(),
+                api_version=settings.azure_tts_api_version,
+                deployment=settings.azure_tts_deployment,
+                default_voice=settings.azure_tts_voice,
+            )
+        else:
+            from careintel.infrastructure.tts.demo_provider import DemoTTSProvider
+            _app.state.tts_provider = DemoTTSProvider()
+
+        # ── OCR Provider ──────────────────────────────────────────────────────────
+        if settings.ocr_provider == "azure_document_intelligence" and settings.azure_document_intelligence_endpoint and settings.azure_document_intelligence_key:
+            from careintel.infrastructure.ocr.azure_provider import AzureDocumentIntelligenceProvider
+            _app.state.ocr_provider = AzureDocumentIntelligenceProvider(
+                endpoint=settings.azure_document_intelligence_endpoint,
+                key=settings.azure_document_intelligence_key.get_secret_value(),
+                model=settings.azure_di_model,
+            )
+        else:
+            _app.state.ocr_provider = DemoOcrProvider()
+
+        # Other Demo Providers
         _app.state.language_provider = DemoLanguageProvider()
         _app.state.translation_provider = DemoTranslationProvider()
         _app.state.extraction_provider = DemoExtractionProvider()

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
+from careintel.api.v1.audio import router as audio_router
 from careintel.api.v1.auth import router as auth_router
 from careintel.api.v1.cases import router as cases_router
 from careintel.api.v1.consent import router as consent_router
@@ -32,6 +33,7 @@ router.include_router(consent_router.router)
 router.include_router(cases_router.router)
 
 # Phase 3 & 4: Evidence & Processing
+router.include_router(audio_router.router)
 router.include_router(evidence_router.router)
 router.include_router(processing_router.router)
 
