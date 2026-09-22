@@ -170,6 +170,71 @@ class Settings(BaseSettings):
         description="If True, evidence cannot become READY until scanned and CLEAN.",
     )
 
+    # ── Processing & Providers ───────────────────────────────────────────────
+    ocr_provider: str = Field(
+        default="demo",
+        description="OCR provider: demo, paddle, azure_doc_intelligence",
+    )
+    ocr_temp_workspace: str = Field(
+        default="/tmp/careintel_ocr",  # noqa: S108
+        description="Temporary workspace for OCR operations.",
+    )
+
+    stt_provider: str = Field(
+        default="demo",
+        description="STT provider: demo, azure_speech, whisper",
+    )
+
+    language_detection_provider: str = Field(
+        default="demo",
+        description="Language detection provider: demo, langdetect",
+    )
+
+    translation_provider: str = Field(
+        default="demo",
+        description="Translation provider: demo, azure_translate, deepl",
+    )
+    translation_api_key: SecretStr | None = Field(
+        default=None,
+        description="API key for translation provider if required.",
+    )
+    translation_endpoint: str | None = Field(
+        default=None,
+        description="Endpoint for translation provider if required.",
+    )
+
+    extraction_provider: str = Field(
+        default="demo",
+        description="Extraction provider: demo, gpt",
+    )
+
+    # ── Async Execution & Celery (Phase 8) ────────────
+    celery_broker_url: SecretStr = Field(default=SecretStr("redis://localhost:6379/0"))
+    celery_result_backend: SecretStr | None = Field(default=None)
+    celery_task_default_queue: str = Field(default="careintel_default")
+    celery_worker_prefetch_multiplier: int = Field(default=1)
+    celery_task_soft_time_limit: int = Field(default=300)
+    celery_task_hard_time_limit: int = Field(default=360)
+    celery_stale_task_threshold_seconds: int = Field(default=120)
+
+    # ── Structuring ──────────────────────────────────────────────────────────
+    structuring_checklist_path: str = Field(
+        default="config/checklists/demo_v1.json",
+        description="Path to active checklist policy file",
+    )
+    structuring_active_checklist_version: str = Field(
+        default="demo_v1",
+        description="Active checklist version key",
+    )
+    structuring_max_questions_per_round: int = Field(
+        default=5,
+        description="Max clarification questions per round (prototype policy)",
+    )
+    structuring_max_rounds: int = Field(
+        default=2,
+        description="Max clarification rounds (prototype policy)",
+    )
+
     # ── Validators ───────────────────────────────────────────────────────────
     @field_validator("database_url", mode="before")
     @classmethod

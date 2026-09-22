@@ -72,7 +72,7 @@ class FileValidator:
         magic_mime = self.validate_magic_signature(first_chunk)
         hasher.update(first_chunk)
         total_size += len(first_chunk)
-        
+
         if total_size > self.max_size_bytes:
             raise FileTooLargeError(
                 f"File exceeds maximum allowed size of {self.max_size_bytes} bytes."

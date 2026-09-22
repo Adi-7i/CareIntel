@@ -1,0 +1,3 @@
+"""
+AI domain module.
+"""
