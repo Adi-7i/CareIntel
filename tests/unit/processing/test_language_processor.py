@@ -42,7 +42,7 @@ def evidence() -> EvidenceORM:
 @pytest.fixture
 def mocks() -> dict[str, AsyncMock]:
     return {
-        "evidence_repo": AsyncMock(),
+        "access_guard": AsyncMock(),
         "processing_repo": AsyncMock(),
         "outbox_repo": AsyncMock(),
         "language_provider": AsyncMock(),
@@ -61,7 +61,7 @@ def processor(mocks: dict[str, AsyncMock]) -> LanguageProcessor:
     )
     return LanguageProcessor(
         settings=settings,
-        evidence_repo=mocks["evidence_repo"],
+        access_guard=mocks["access_guard"],
         processing_repo=mocks["processing_repo"],
         outbox_repo=mocks["outbox_repo"],
         language_provider=mocks["language_provider"],
@@ -76,7 +76,7 @@ async def test_process_no_translation_needed(
     evidence: EvidenceORM,
     user: UserContext,
 ) -> None:
-    mocks["evidence_repo"].get_by_id.return_value = evidence
+    mocks["access_guard"].require_ready_evidence.return_value = evidence
     mocks["processing_repo"].get_run_by_idempotency_key.return_value = None
     mocks["language_provider"].detect_language.return_value = [LanguageDetectionResult("en", 0.99)]
 
@@ -101,7 +101,7 @@ async def test_process_translation_needed(
     evidence: EvidenceORM,
     user: UserContext,
 ) -> None:
-    mocks["evidence_repo"].get_by_id.return_value = evidence
+    mocks["access_guard"].require_ready_evidence.return_value = evidence
     mocks["processing_repo"].get_run_by_idempotency_key.return_value = None
     mocks["language_provider"].detect_language.return_value = [LanguageDetectionResult("fr", 0.95)]
     mocks["translation_provider"].translate.return_value = "Hello"
@@ -122,7 +122,7 @@ async def test_process_provider_error(
     evidence: EvidenceORM,
     user: UserContext,
 ) -> None:
-    mocks["evidence_repo"].get_by_id.return_value = evidence
+    mocks["access_guard"].require_ready_evidence.return_value = evidence
     mocks["processing_repo"].get_run_by_idempotency_key.return_value = None
     mocks["language_provider"].detect_language.side_effect = Exception("API Down")
 
@@ -130,4 +130,4 @@ async def test_process_provider_error(
 
     added_run = mocks["processing_repo"].add_run.call_args[0][0]
     assert added_run.status == ProcessingStatus.FAILED.value
-    assert "API Down" in added_run.failure_reason
+    assert added_run.failure_reason == "Exception"

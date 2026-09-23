@@ -50,6 +50,9 @@ class AIRepository:
         await self._session.flush()
         return orm
 
+    async def get_run(self, run_id: uuid.UUID) -> AIRunORM | None:
+        return await self._session.get(AIRunORM, run_id)
+
     async def update_run(self, run_id: uuid.UUID, updates: dict[str, Any]) -> None:
         await self._session.execute(update(AIRunORM).where(AIRunORM.id == run_id).values(**updates))
         await self._session.flush()

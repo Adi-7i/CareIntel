@@ -40,6 +40,7 @@ class SparseSearcher:
     async def search(
         self,
         query_text: str,
+        corpus_version: str,
         top_k: int,
         publication_status: str = "PUBLISHED",
     ) -> list[SparseSearchResult]:
@@ -64,14 +65,15 @@ class SparseSearcher:
                 SELECT
                     kc.id AS chunk_id,
                     ts_rank_cd(kc.fts_vector, query) AS sparse_score
-                FROM knowledge_chunks kc,
-                     websearch_to_tsquery('english', :query_text) query
+                FROM knowledge_chunks kc
                 JOIN knowledge_versions kv ON kv.id = kc.version_id
                 JOIN knowledge_sources ks ON ks.id = kv.source_id
+                CROSS JOIN websearch_to_tsquery('english', :query_text) query
                 WHERE
                     kc.fts_vector @@ query
                     AND kc.status = 'ACTIVE'
                     AND ks.publication_status = :pub_status
+                    AND kv.corpus_version = :corpus_version
                 ORDER BY sparse_score DESC
                 LIMIT :top_k
                 """
@@ -79,6 +81,7 @@ class SparseSearcher:
             {
                 "query_text": query_text,
                 "pub_status": publication_status,
+                "corpus_version": corpus_version,
                 "top_k": top_k,
             },
         )

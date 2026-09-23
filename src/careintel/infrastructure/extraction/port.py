@@ -2,6 +2,7 @@
 Extraction Provider interface.
 """
 
+import uuid
 from typing import Protocol
 
 from careintel.domain.processing.processing_models import CandidateField
@@ -18,7 +19,9 @@ class ExtractionResult:
 class ExtractionProvider(Protocol):
     """Protocol for Extraction adapters (e.g., GPT, Demo)."""
 
-    async def extract_candidates(self, text: str, run_id: str) -> ExtractionResult:
+    async def extract_candidates(
+        self, text: str, run_id: str, evidence_id: uuid.UUID
+    ) -> ExtractionResult:
         """
         Extract structured candidates from normalized text.
         """

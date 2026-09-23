@@ -6,7 +6,7 @@ import datetime
 import uuid
 
 from careintel.application.structuring.question_generator import TemplateQuestionGenerator
-from careintel.domain.structuring.checklist import ChecklistPolicy
+from careintel.domain.structuring.checklist import ChecklistPolicy, ChecklistRequirement
 from careintel.domain.structuring.missing_info import MissingInfoItem, RequirementStatus
 from careintel.domain.structuring.questions import ClarificationQuestion, QuestionStatus
 
@@ -80,7 +80,20 @@ def test_question_generator_skips_existing_question() -> None:
 
 def test_question_generator_generates_valid_question() -> None:
     generator = TemplateQuestionGenerator()
-    policy = ChecklistPolicy(version="demo_v1", max_questions_per_round=5, max_rounds=2)
+    policy = ChecklistPolicy(
+        version="demo_v1",
+        max_questions_per_round=5,
+        max_rounds=2,
+        requirements=[
+            ChecklistRequirement(
+                key="symptom_onset",
+                description="when the reported symptom started",
+                materiality="DEMO",
+                version="demo_v1",
+                expected_field_types=["symptom_onset"],
+            )
+        ],
+    )
     item = MissingInfoItem(
         item_id=uuid.uuid4(),
         case_id=uuid.uuid4(),

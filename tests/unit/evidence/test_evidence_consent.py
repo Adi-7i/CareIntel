@@ -18,6 +18,7 @@ def _service(consent: object | None) -> EvidenceService:
     consent_repo.get_by_id.return_value = consent
     return EvidenceService(
         case_repo=AsyncMock(),
+        encounter_repo=AsyncMock(),
         consent_repo=consent_repo,
         evidence_repo=AsyncMock(),
         text_repo=AsyncMock(),

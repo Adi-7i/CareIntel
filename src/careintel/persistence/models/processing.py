@@ -200,7 +200,16 @@ class ExtractionRunORM(Base, TimestampMixin):
         nullable=False,
         unique=True,
     )
+    source_processing_run_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("processing_runs.id", ondelete="RESTRICT"),
+        nullable=True,
+    )
     provider_version: Mapped[str] = mapped_column(String, nullable=False)
+
+    __table_args__ = (
+        Index("ix_extraction_runs_source_processing_run", "source_processing_run_id"),
+    )
 
 
 class ExtractedCandidateORM(Base, TimestampMixin):

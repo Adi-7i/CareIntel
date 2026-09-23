@@ -2,10 +2,14 @@
 Processing API Schemas.
 """
 
+import datetime
 import uuid
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
+
+from careintel.domain.processing.processing_status import ProcessingStatus
+from careintel.domain.processing.processor_type import ProcessorType
 
 
 class TriggerProcessingRequest(BaseModel):
@@ -23,3 +27,19 @@ class TriggerProcessingResponse(BaseModel):
     message: str = "Processing triggered successfully."
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class ProcessingRunResponse(BaseModel):
+    """Persisted processing state and provider metadata."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    run_id: uuid.UUID
+    evidence_id: uuid.UUID
+    processor_type: ProcessorType
+    provider: str
+    status: ProcessingStatus
+    config_version: str
+    started_at: datetime.datetime | None
+    completed_at: datetime.datetime | None
+    failure_reason: str | None

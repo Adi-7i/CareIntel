@@ -42,6 +42,7 @@ class DenseSearcher:
         self,
         query_vector: list[float],
         embedding_version_id: uuid.UUID,
+        corpus_version: str,
         top_k: int,
         publication_status: str = "PUBLISHED",
     ) -> list[DenseSearchResult]:
@@ -70,7 +71,7 @@ class DenseSearcher:
                 """
                 SELECT
                     ce.chunk_id,
-                    (1.0 - (ce.embedding <=> :query_vec::vector)) AS dense_score
+                    (1.0 - (ce.embedding <=> CAST(:query_vec AS vector))) AS dense_score
                 FROM chunk_embeddings ce
                 JOIN knowledge_chunks kc ON kc.id = ce.chunk_id
                 JOIN knowledge_versions kv ON kv.id = kc.version_id
@@ -79,7 +80,8 @@ class DenseSearcher:
                     ce.embedding_version_id = :emb_version_id
                     AND kc.status = 'ACTIVE'
                     AND ks.publication_status = :pub_status
-                ORDER BY ce.embedding <=> :query_vec::vector
+                    AND kv.corpus_version = :corpus_version
+                ORDER BY ce.embedding <=> CAST(:query_vec AS vector)
                 LIMIT :top_k
                 """
             ),
@@ -87,6 +89,7 @@ class DenseSearcher:
                 "query_vec": vector_str,
                 "emb_version_id": embedding_version_id,
                 "pub_status": publication_status,
+                "corpus_version": corpus_version,
                 "top_k": top_k,
             },
         )

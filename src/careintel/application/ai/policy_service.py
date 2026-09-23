@@ -12,8 +12,9 @@ CRITICAL INVARIANTS:
 
 from __future__ import annotations
 
+import re
 import uuid
-from typing import Any, Protocol
+from typing import Any, ClassVar, Protocol
 
 from careintel.domain.ai.models import AIDraft, PolicyDecision, SafeContext
 from careintel.domain.ai.status import PolicyCheckType, PolicyOutcome
@@ -73,17 +74,23 @@ class ProvenanceIntegrityRule:
         _collect(context.timeline_events)
 
         invalid_citations = []
-        for claim in draft.claim_provenance:
+        unsupported_claim_indexes = []
+        for index, claim in enumerate(draft.claim_provenance):
+            if claim.status == "SUPPORTED" and not claim.supporting_source_ids:
+                unsupported_claim_indexes.append(index)
             for sid in claim.supporting_source_ids:
                 if sid not in valid_ids:
                     invalid_citations.append(str(sid))
 
-        if invalid_citations:
+        if invalid_citations or unsupported_claim_indexes:
             return PolicyDecision(
                 check_type=self.check_type,
                 policy_version=self.version,
                 outcome=PolicyOutcome.FAIL,
-                detail={"invalid_source_ids": invalid_citations},
+                detail={
+                    "invalid_source_ids": invalid_citations,
+                    "supported_without_source_indexes": unsupported_claim_indexes,
+                },
             )
 
         return PolicyDecision(
@@ -91,6 +98,153 @@ class ProvenanceIntegrityRule:
             policy_version=self.version,
             outcome=PolicyOutcome.PASS,
             detail={},
+        )
+
+
+def _keys_and_strings(value: object) -> tuple[set[str], list[str]]:
+    keys: set[str] = set()
+    strings: list[str] = []
+    if isinstance(value, dict):
+        for key, nested in value.items():
+            keys.add(str(key).casefold())
+            nested_keys, nested_strings = _keys_and_strings(nested)
+            keys.update(nested_keys)
+            strings.extend(nested_strings)
+    elif isinstance(value, list):
+        for nested in value:
+            nested_keys, nested_strings = _keys_and_strings(nested)
+            keys.update(nested_keys)
+            strings.extend(nested_strings)
+    elif isinstance(value, str):
+        strings.append(value)
+    return keys, strings
+
+
+class AllowedOutputTypeRule:
+    @property
+    def check_type(self) -> PolicyCheckType:
+        return PolicyCheckType.ALLOWED_OUTPUT_TYPE
+
+    @property
+    def version(self) -> str:
+        return "1.0"
+
+    def evaluate(self, draft: AIDraft, context: SafeContext) -> PolicyDecision:
+        allowed = {"summary", "claims", "missing_information_ids", "limitations"}
+        unexpected = sorted(set(draft.content) - allowed)
+        return PolicyDecision(
+            check_type=self.check_type,
+            policy_version=self.version,
+            outcome=PolicyOutcome.FAIL if unexpected else PolicyOutcome.PASS,
+            detail={"unexpected_fields": unexpected} if unexpected else {},
+        )
+
+
+class RequiredEvidenceRule:
+    @property
+    def check_type(self) -> PolicyCheckType:
+        return PolicyCheckType.REQUIRED_EVIDENCE
+
+    @property
+    def version(self) -> str:
+        return "1.0"
+
+    def evaluate(self, draft: AIDraft, context: SafeContext) -> PolicyDecision:
+        missing = [
+            index
+            for index, claim in enumerate(draft.claim_provenance)
+            if claim.status == "SUPPORTED" and not claim.supporting_source_ids
+        ]
+        return PolicyDecision(
+            check_type=self.check_type,
+            policy_version=self.version,
+            outcome=PolicyOutcome.FAIL if missing else PolicyOutcome.PASS,
+            detail={"claim_indexes": missing} if missing else {},
+        )
+
+
+class ProhibitedContentRule:
+    _PROHIBITED_KEYS: ClassVar[set[str]] = {
+        "diagnosis",
+        "diagnoses",
+        "prescription",
+        "treatment_plan",
+        "medication_recommendation",
+        "dosage",
+    }
+    _PATTERN = re.compile(
+        r"\b(?:diagnosis\s+is|diagnos(?:e|ed)\s+with|prescrib(?:e|ed|ing)|"
+        r"dosage\s+should|treatment\s+plan\s+is)\b",
+        re.IGNORECASE,
+    )
+
+    @property
+    def check_type(self) -> PolicyCheckType:
+        return PolicyCheckType.PROHIBITED_CONTENT
+
+    @property
+    def version(self) -> str:
+        return "1.0"
+
+    def evaluate(self, draft: AIDraft, context: SafeContext) -> PolicyDecision:
+        keys, strings = _keys_and_strings(draft.content)
+        prohibited_keys = sorted(keys & self._PROHIBITED_KEYS)
+        matched_text = any(self._PATTERN.search(value) for value in strings)
+        failed = bool(prohibited_keys or matched_text)
+        return PolicyDecision(
+            check_type=self.check_type,
+            policy_version=self.version,
+            outcome=PolicyOutcome.FAIL if failed else PolicyOutcome.PASS,
+            detail={
+                "prohibited_fields": prohibited_keys,
+                "prohibited_text_detected": matched_text,
+            }
+            if failed
+            else {},
+        )
+
+
+class ReviewerOnlyActionRule:
+    _PROHIBITED_KEYS: ClassVar[set[str]] = {
+        "approval",
+        "approved",
+        "urgency",
+        "urgency_decision",
+        "escalation",
+        "referral",
+        "case_closure",
+        "workflow_action",
+        "tool_call",
+    }
+    _PATTERN = re.compile(
+        r"\b(?:approve|approved|escalate|escalated|refer|referred|close|closed)\s+"
+        r"(?:the\s+|this\s+)?case\b|\bcase\s+urgency\s+is\b",
+        re.IGNORECASE,
+    )
+
+    @property
+    def check_type(self) -> PolicyCheckType:
+        return PolicyCheckType.REVIEWER_ONLY_ACTION
+
+    @property
+    def version(self) -> str:
+        return "1.0"
+
+    def evaluate(self, draft: AIDraft, context: SafeContext) -> PolicyDecision:
+        keys, strings = _keys_and_strings(draft.content)
+        prohibited_keys = sorted(keys & self._PROHIBITED_KEYS)
+        matched_text = any(self._PATTERN.search(value) for value in strings)
+        failed = bool(prohibited_keys or matched_text)
+        return PolicyDecision(
+            check_type=self.check_type,
+            policy_version=self.version,
+            outcome=PolicyOutcome.FAIL if failed else PolicyOutcome.PASS,
+            detail={
+                "reviewer_only_fields": prohibited_keys,
+                "reviewer_only_action_detected": matched_text,
+            }
+            if failed
+            else {},
         )
 
 
@@ -102,7 +256,13 @@ class PolicyService:
     def __init__(self, rules: list[PolicyRule] | None = None) -> None:
         if rules is None:
             # Default safety suite
-            self._rules: list[PolicyRule] = [ProvenanceIntegrityRule()]
+            self._rules: list[PolicyRule] = [
+                AllowedOutputTypeRule(),
+                RequiredEvidenceRule(),
+                ProvenanceIntegrityRule(),
+                ProhibitedContentRule(),
+                ReviewerOnlyActionRule(),
+            ]
         else:
             self._rules = rules
 

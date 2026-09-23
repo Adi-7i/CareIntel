@@ -35,6 +35,10 @@ def mocks() -> dict[str, AsyncMock]:
         "evidence_repo": AsyncMock(),
         "case_repo": AsyncMock(),
         "outbox_repo": AsyncMock(),
+        "processing_repo": AsyncMock(),
+        "text_repo": AsyncMock(),
+        "audit_repo": AsyncMock(),
+        "access_guard": AsyncMock(),
     }
 
 
@@ -49,6 +53,10 @@ def service(mocks: dict[str, AsyncMock]) -> ProcessingService:
         evidence_repo=mocks["evidence_repo"],
         case_repo=mocks["case_repo"],
         outbox_repo=mocks["outbox_repo"],
+        processing_repo=mocks["processing_repo"],
+        text_repo=mocks["text_repo"],
+        audit_repo=mocks["audit_repo"],
+        access_guard=mocks["access_guard"],
     )
 
 

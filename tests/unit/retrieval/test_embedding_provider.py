@@ -64,7 +64,7 @@ class TestDemoEmbeddingProvider:
     async def test_embed_metadata(self, provider: DemoEmbeddingProvider) -> None:
         result = await provider.embed("metadata test")
         assert result.provider == "demo"
-        assert result.model == "demo-fixed-768"
+        assert result.model == "demo-fixed-1536"
         assert result.dimension == _DEMO_DIMENSION
         assert result.version_key == _DEMO_VERSION_KEY
 

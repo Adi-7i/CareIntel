@@ -32,7 +32,6 @@ def authenticated_app(app: FastAPI) -> FastAPI:
             {"reason": "synthetic", "expected_version": 1},
         ),
         ("POST", f"/api/v1/handoffs/{uuid.uuid4()}/complete", None),
-        ("GET", f"/api/v1/cases/{uuid.uuid4()}/timeline", None),
     ],
 )
 async def test_incomplete_capability_returns_501(

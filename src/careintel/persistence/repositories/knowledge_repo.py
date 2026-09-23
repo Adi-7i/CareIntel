@@ -96,6 +96,27 @@ class KnowledgeRepository:
         )
         return result.scalar_one_or_none()
 
+    async def get_published_chunks(
+        self,
+        chunk_ids: list[uuid.UUID],
+        corpus_version: str,
+    ) -> list[tuple[KnowledgeChunkORM, KnowledgeVersionORM, KnowledgeSourceORM]]:
+        """Return only active chunks from a published, pinned corpus version."""
+        if not chunk_ids:
+            return []
+        result = await self._session.execute(
+            select(KnowledgeChunkORM, KnowledgeVersionORM, KnowledgeSourceORM)
+            .join(KnowledgeVersionORM, KnowledgeVersionORM.id == KnowledgeChunkORM.version_id)
+            .join(KnowledgeSourceORM, KnowledgeSourceORM.id == KnowledgeVersionORM.source_id)
+            .where(
+                KnowledgeChunkORM.id.in_(chunk_ids),
+                KnowledgeChunkORM.status == "ACTIVE",
+                KnowledgeVersionORM.corpus_version == corpus_version,
+                KnowledgeSourceORM.publication_status == "PUBLISHED",
+            )
+        )
+        return list(result.tuples().all())
+
     # ── Embedding Versions ────────────────────────────────────────────────────
 
     async def get_or_create_embedding_version(self, data: dict[str, Any]) -> EmbeddingVersionORM:

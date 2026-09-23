@@ -47,6 +47,7 @@ from careintel.persistence.models.evidence import (
 from careintel.persistence.repositories.audit_repo import AuditRepository
 from careintel.persistence.repositories.case_repo import CaseRepository
 from careintel.persistence.repositories.consent_repo import ConsentRepository
+from careintel.persistence.repositories.encounter_repo import EncounterRepository
 from careintel.persistence.repositories.evidence_history_repo import EvidenceHistoryRepository
 from careintel.persistence.repositories.evidence_outbox_repo import EvidenceOutboxRepository
 from careintel.persistence.repositories.evidence_repo import EvidenceRepository
@@ -59,6 +60,7 @@ class EvidenceService:
     def __init__(
         self,
         case_repo: CaseRepository,
+        encounter_repo: EncounterRepository,
         consent_repo: ConsentRepository,
         evidence_repo: EvidenceRepository,
         text_repo: TextContentRepository,
@@ -72,6 +74,7 @@ class EvidenceService:
         sas_ttl_minutes: int = 15,
     ) -> None:
         self.case_repo = case_repo
+        self.encounter_repo = encounter_repo
         self.consent_repo = consent_repo
         self.evidence_repo = evidence_repo
         self.text_repo = text_repo
@@ -144,6 +147,14 @@ class EvidenceService:
             required_notice_version="1.0",
         )
 
+    async def _require_encounter_in_case(
+        self, encounter_id: uuid.UUID | None, case_id: uuid.UUID
+    ) -> None:
+        if encounter_id is None:
+            return
+        if await self.encounter_repo.get_for_case(encounter_id, case_id) is None:
+            raise NotFoundError("Encounter not found for case.")
+
     async def _append_audit(
         self,
         event_type: str,
@@ -171,6 +182,7 @@ class EvidenceService:
         """Register text-based evidence and transition case state if needed."""
         case_orm = await self._get_authorized_case(cmd.case_id, user, Permission.EVIDENCE_WRITE)
         await self._require_data_processing_consent(cmd.consent_id, case_orm)
+        await self._require_encounter_in_case(cmd.encounter_id, cmd.case_id)
 
         # Create Evidence ORM
         evidence_orm = EvidenceORM(
@@ -240,6 +252,7 @@ class EvidenceService:
         """Start a multipart file upload."""
         case_orm = await self._get_authorized_case(cmd.case_id, user, Permission.EVIDENCE_WRITE)
         await self._require_data_processing_consent(cmd.consent_id, case_orm)
+        await self._require_encounter_in_case(cmd.encounter_id, cmd.case_id)
 
         # Validate extension first before doing anything
         sanitized_filename = self.file_validator.validate_extension(cmd.declared_filename)

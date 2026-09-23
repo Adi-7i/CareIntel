@@ -24,6 +24,8 @@ class AuditEventType(StrEnum):
     CASE_AUTH_DENIED = "case_auth_denied"
     CASE_CONCURRENCY_CONFLICT = "case_concurrency_conflict"
     CASE_CONSENT_DENIED = "case_consent_denied"
+    ENCOUNTER_CREATED = "encounter_created"
+    ENCOUNTER_ACCESSED = "encounter_accessed"
 
     # Evidence
     EVIDENCE_TEXT_CREATED = "evidence_text_created"

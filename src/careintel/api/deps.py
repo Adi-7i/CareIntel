@@ -20,6 +20,10 @@ from fastapi import Depends, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from careintel.application.ai.ai_service import AIService
+from careintel.application.ai.ai_workflow_service import AIWorkflowService
+from careintel.application.ai.context_builder import AIContextBuilder
+from careintel.application.ai.policy_service import PolicyService
 from careintel.application.audio.speech_service import SpeechService
 from careintel.application.auth.auth_service import AuthService
 from careintel.application.auth.consent_service import ConsentService
@@ -27,33 +31,43 @@ from careintel.application.auth.password_hasher import PasswordHasher
 from careintel.application.auth.permission_service import PermissionService
 from careintel.application.auth.token_service import JWTService
 from careintel.application.case.case_service import CaseService
+from careintel.application.case.encounter_service import EncounterService
 from careintel.application.evidence.evidence_service import EvidenceService
 from careintel.application.evidence.file_validator import FileValidator
+from careintel.application.processing.access import ProcessingAccessGuard
 from careintel.application.processing.document_processor import DocumentProcessor
 from careintel.application.processing.extraction_processor import ExtractionProcessor
 from careintel.application.processing.language_processor import LanguageProcessor
 from careintel.application.processing.processing_service import ProcessingService
 from careintel.application.processing.speech_processor import SpeechProcessor
+from careintel.application.retrieval.retrieval_service import RetrievalService
 from careintel.core.config import Settings, get_settings
 from careintel.core.database import get_async_session
 from careintel.domain.auth.models import UserContext
 from careintel.domain.auth.permissions import Permission
+from careintel.infrastructure.ai.port import LLMProvider
+from careintel.infrastructure.embedding.port import EmbeddingProvider
 from careintel.infrastructure.language.port import LanguageProvider
 from careintel.infrastructure.ocr.port import OcrProvider
 from careintel.infrastructure.scanner.port import ContentScannerPort
 from careintel.infrastructure.storage.port import BlobStoragePort
 from careintel.infrastructure.stt.port import SpeechProvider
 from careintel.infrastructure.translation.port import TranslationProvider
+from careintel.persistence.repositories.ai_repo import AIRepository
 from careintel.persistence.repositories.audit_repo import AuditRepository
 from careintel.persistence.repositories.case_history_repo import CaseHistoryRepository
 from careintel.persistence.repositories.case_outbox_repo import CaseOutboxRepository
 from careintel.persistence.repositories.case_repo import CaseRepository
 from careintel.persistence.repositories.consent_repo import ConsentRepository
+from careintel.persistence.repositories.encounter_repo import EncounterRepository
 from careintel.persistence.repositories.evidence_history_repo import EvidenceHistoryRepository
 from careintel.persistence.repositories.evidence_outbox_repo import EvidenceOutboxRepository
 from careintel.persistence.repositories.evidence_repo import EvidenceRepository
+from careintel.persistence.repositories.knowledge_repo import KnowledgeRepository
 from careintel.persistence.repositories.processing_repo import ProcessingRepository
+from careintel.persistence.repositories.retrieval_repo import RetrievalRepository
 from careintel.persistence.repositories.session_repo import SessionRepository
+from careintel.persistence.repositories.structuring_repo import StructuringRepository
 from careintel.persistence.repositories.text_content_repo import TextContentRepository
 from careintel.persistence.repositories.user_repo import UserRepository
 
@@ -183,6 +197,18 @@ def get_case_service(
     )
 
 
+def get_encounter_service(
+    session: DbSessionDep,
+    consent_service: Annotated[ConsentService, Depends(get_consent_service)],
+) -> EncounterService:
+    return EncounterService(
+        case_repo=CaseRepository(session),
+        encounter_repo=EncounterRepository(session),
+        consent_service=consent_service,
+        audit_repo=AuditRepository(session),
+    )
+
+
 def get_blob_provider(request: Request) -> BlobStoragePort:
     """Get the blob storage provider initialized in app lifespan."""
     return cast(BlobStoragePort, request.app.state.blob_provider)
@@ -203,6 +229,7 @@ def get_evidence_service(
     """Construct EvidenceService with all required repositories."""
     return EvidenceService(
         case_repo=CaseRepository(session),
+        encounter_repo=EncounterRepository(session),
         consent_repo=ConsentRepository(session),
         evidence_repo=EvidenceRepository(session),
         text_repo=TextContentRepository(session),
@@ -252,10 +279,18 @@ def get_processing_service(
     evidence_repo = EvidenceRepository(session)
     processing_repo = ProcessingRepository(session)
     outbox_repo = EvidenceOutboxRepository(session)
+    access_guard = ProcessingAccessGuard(
+        evidence_repo=evidence_repo,
+        case_repo=CaseRepository(session),
+        consent_service=ConsentService(
+            consent_repo=ConsentRepository(session),
+            audit_repo=AuditRepository(session),
+        ),
+    )
 
     doc_processor = DocumentProcessor(
         settings=settings,
-        evidence_repo=evidence_repo,
+        access_guard=access_guard,
         processing_repo=processing_repo,
         outbox_repo=outbox_repo,
         blob_storage=blob_provider,
@@ -264,7 +299,7 @@ def get_processing_service(
 
     speech_processor = SpeechProcessor(
         settings=settings,
-        evidence_repo=evidence_repo,
+        access_guard=access_guard,
         processing_repo=processing_repo,
         outbox_repo=outbox_repo,
         blob_storage=blob_provider,
@@ -273,7 +308,7 @@ def get_processing_service(
 
     lang_processor = LanguageProcessor(
         settings=settings,
-        evidence_repo=evidence_repo,
+        access_guard=access_guard,
         processing_repo=processing_repo,
         outbox_repo=outbox_repo,
         language_provider=language_provider,
@@ -282,7 +317,7 @@ def get_processing_service(
 
     ext_processor = ExtractionProcessor(
         settings=settings,
-        evidence_repo=evidence_repo,
+        access_guard=access_guard,
         processing_repo=processing_repo,
         outbox_repo=outbox_repo,
         extraction_provider=request.app.state.extraction_provider,  # or get_extraction_provider
@@ -302,6 +337,10 @@ def get_processing_service(
         evidence_repo=evidence_repo,
         case_repo=CaseRepository(session),
         outbox_repo=outbox_repo,
+        processing_repo=processing_repo,
+        text_repo=TextContentRepository(session),
+        audit_repo=AuditRepository(session),
+        access_guard=access_guard,
     )
 
 
@@ -317,4 +356,69 @@ def get_speech_service(
     return SpeechService(
         tts_provider=provider,
         audit_repo=AuditRepository(session),
+    )
+
+
+# ── Retrieval & Advisory AI ───────────────────────────────────────────────────
+
+
+def get_embedding_provider(request: Request) -> EmbeddingProvider:
+    return cast(EmbeddingProvider, request.app.state.embedding_provider)
+
+
+def get_llm_provider(request: Request) -> LLMProvider:
+    return cast(LLMProvider, request.app.state.llm_provider)
+
+
+def get_retrieval_service(
+    session: DbSessionDep,
+    embedding_provider: Annotated[EmbeddingProvider, Depends(get_embedding_provider)],
+) -> RetrievalService:
+    from careintel.infrastructure.reranker.noop_reranker import NoOpReranker
+
+    return RetrievalService(
+        session=session,
+        retrieval_repo=RetrievalRepository(session),
+        knowledge_repo=KnowledgeRepository(session),
+        case_repo=CaseRepository(session),
+        consent_service=ConsentService(
+            consent_repo=ConsentRepository(session),
+            audit_repo=AuditRepository(session),
+        ),
+        audit_repo=AuditRepository(session),
+        embedding_provider=embedding_provider,
+        rerank_provider=NoOpReranker(),
+    )
+
+
+def get_ai_workflow_service(
+    session: DbSessionDep,
+    settings: SettingsDep,
+    llm_provider: Annotated[LLMProvider, Depends(get_llm_provider)],
+) -> AIWorkflowService:
+    retrieval_repo = RetrievalRepository(session)
+    knowledge_repo = KnowledgeRepository(session)
+    processing_repo = ProcessingRepository(session)
+    return AIWorkflowService(
+        case_repo=CaseRepository(session),
+        consent_service=ConsentService(
+            consent_repo=ConsentRepository(session),
+            audit_repo=AuditRepository(session),
+        ),
+        context_builder=AIContextBuilder(
+            retrieval_repo=retrieval_repo,
+            knowledge_repo=knowledge_repo,
+            evidence_repo=EvidenceRepository(session),
+            text_repo=TextContentRepository(session),
+            processing_repo=processing_repo,
+            structuring_repo=StructuringRepository(session),
+        ),
+        ai_service=AIService(
+            session=session,
+            ai_repo=AIRepository(session),
+            audit_repo=AuditRepository(session),
+            llm_provider=llm_provider,
+            policy_service=PolicyService(),
+        ),
+        settings=settings,
     )

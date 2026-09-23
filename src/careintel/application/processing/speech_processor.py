@@ -12,18 +12,12 @@ from datetime import UTC, datetime
 
 from ulid import ULID
 
+from careintel.application.processing.access import ProcessingAccessGuard
 from careintel.core.config import Settings
-from careintel.core.errors import (
-    AuthorizationError,
-    CareIntelError,
-    NotFoundError,
-)
+from careintel.core.errors import CareIntelError
 from careintel.domain.audit.events import AuditEventType
 from careintel.domain.auth.models import UserContext
-from careintel.domain.auth.permissions import Permission
-from careintel.domain.auth.policy import AuthorizationPolicy
 from careintel.domain.evidence.modality import EvidenceModality
-from careintel.domain.evidence.states import EvidenceState
 from careintel.domain.processing.processing_status import ProcessingStatus
 from careintel.domain.processing.processor_type import ProcessorType
 from careintel.infrastructure.storage.port import BlobStoragePort
@@ -35,7 +29,6 @@ from careintel.persistence.models.processing import (
     TranscriptSegmentORM,
 )
 from careintel.persistence.repositories.evidence_outbox_repo import EvidenceOutboxRepository
-from careintel.persistence.repositories.evidence_repo import EvidenceRepository
 from careintel.persistence.repositories.processing_repo import ProcessingRepository
 
 
@@ -45,14 +38,14 @@ class SpeechProcessor:
     def __init__(
         self,
         settings: Settings,
-        evidence_repo: EvidenceRepository,
+        access_guard: ProcessingAccessGuard,
         processing_repo: ProcessingRepository,
         outbox_repo: EvidenceOutboxRepository,
         blob_storage: BlobStoragePort,
         speech_provider: SpeechProvider,
     ) -> None:
         self.settings = settings
-        self.evidence_repo = evidence_repo
+        self.access_guard = access_guard
         self.processing_repo = processing_repo
         self.outbox_repo = outbox_repo
         self.blob_storage = blob_storage
@@ -66,22 +59,7 @@ class SpeechProcessor:
         Executes the Audio STT pipeline for a given evidence ID.
         Returns the ProcessingRun ID.
         """
-        # 1. Fetch Evidence
-        evidence = await self.evidence_repo.get_by_id(evidence_id)
-        if not evidence:
-            raise NotFoundError(f"Evidence {evidence_id} not found.")
-
-        # 2. Authorization
-        if not AuthorizationPolicy.evaluate(
-            user, Permission.PROCESSING_WRITE, str(evidence.case_id)
-        ):
-            raise AuthorizationError("Missing PROCESSING_WRITE permission for this case.")
-
-        # 3. Consent Re-check
-        if evidence.state != EvidenceState.READY:
-            raise CareIntelError(
-                f"Evidence must be READY for processing. Current: {evidence.state}"
-            )
+        evidence = await self.access_guard.require_ready_evidence(evidence_id, user)
 
         if evidence.modality != EvidenceModality.AUDIO:
             raise CareIntelError(f"SpeechProcessor cannot handle modality: {evidence.modality}")
@@ -93,10 +71,7 @@ class SpeechProcessor:
             processor_type=ProcessorType.SPEECH_TRANSCRIPTION.value,
             config_version=config_version,
         )
-        if existing_run and existing_run.status in (
-            ProcessingStatus.COMPLETED,
-            ProcessingStatus.RUNNING,
-        ):
+        if existing_run:
             return existing_run.id
 
         # 5. Create Run Record
@@ -106,11 +81,12 @@ class SpeechProcessor:
             evidence_id=evidence_id,
             processor_type=ProcessorType.SPEECH_TRANSCRIPTION.value,
             provider=self.settings.stt_provider,
-            status=ProcessingStatus.RUNNING.value,
+            status=ProcessingStatus.PENDING.value,
             config_version=config_version,
-            started_at=datetime.now(UTC),
+            started_at=datetime.now(UTC).replace(tzinfo=None),
         )
         await self.processing_repo.add_run(run)
+        run.status = ProcessingStatus.RUNNING.value
 
         # 6. Execute STT in Temp File
         fd, local_file_path = tempfile.mkstemp(prefix=f"stt_{run_id}_")
@@ -153,13 +129,16 @@ class SpeechProcessor:
             await self.processing_repo.session.flush()
 
             run.status = ProcessingStatus.COMPLETED.value
-            run.completed_at = datetime.now(UTC)
+            run.completed_at = datetime.now(UTC).replace(tzinfo=None)
 
-        except Exception as e:
-            self.logger.error(f"STT Pipeline failed for run {run_id}: {e}")
+        except Exception as exc:
+            self.logger.error(
+                "STT processing failed",
+                extra={"run_id": str(run_id), "error_type": type(exc).__name__},
+            )
             run.status = ProcessingStatus.FAILED.value
-            run.failure_reason = str(e)
-            run.completed_at = datetime.now(UTC)
+            run.failure_reason = type(exc).__name__
+            run.completed_at = datetime.now(UTC).replace(tzinfo=None)
 
         finally:
             if os.path.exists(local_file_path):

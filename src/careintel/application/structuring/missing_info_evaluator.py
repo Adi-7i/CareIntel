@@ -72,11 +72,11 @@ class MissingInfoEvaluator:
 
                 if not has_readable:
                     status = RequirementStatus.UNREADABLE
+                elif not any(c.status == "VERIFIED" for c in req_candidates):
+                    status = RequirementStatus.UNVERIFIED
                 else:
-                    # In a real system, we'd check against UNVERIFIED thresholds here
-                    # For prototype, if it's readable and not conflicting, it's SATISFIED
                     status = RequirementStatus.SATISFIED
-                    resolution = "Found matching extracted information."
+                    resolution = "Verified matching extracted information is present."
 
             item = MissingInfoItem(
                 item_id=uuid.uuid4(),

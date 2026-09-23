@@ -1,0 +1,25 @@
+{
+  "version": "demo_v1",
+  "max_questions_per_round": 3,
+  "max_rounds": 2,
+  "requirements": [
+    {
+      "key": "symptom_onset",
+      "description": "when the reported symptom started",
+      "materiality": "DEMO",
+      "expected_field_types": ["symptom_onset"]
+    },
+    {
+      "key": "medication_name",
+      "description": "the name of a reported medication",
+      "materiality": "DEMO",
+      "expected_field_types": ["medication_name"]
+    },
+    {
+      "key": "severity",
+      "description": "the reported symptom severity",
+      "materiality": "DEMO",
+      "expected_field_types": ["severity"]
+    }
+  ]
+}

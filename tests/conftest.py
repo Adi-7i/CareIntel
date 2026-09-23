@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import AsyncGenerator, Generator
+from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
@@ -28,9 +29,10 @@ from httpx import ASGITransport, AsyncClient
 
 # Force testing environment before any application import resolves settings
 os.environ.setdefault("APP_ENV", "testing")
-os.environ.setdefault(
-    "DATABASE_URL", "postgresql+asyncpg://test:test@localhost:5432/careintel_test"
-)
+if not Path(".env").is_file():
+    os.environ.setdefault(
+        "DATABASE_URL", "postgresql+asyncpg://test:test@localhost:5432/careintel_test"
+    )
 os.environ.setdefault("SECRET_KEY", "test-secret-key-not-for-production-use-at-all")
 os.environ.setdefault("JWT_SECRET_KEY", "test-jwt-secret-key-not-for-production")
 

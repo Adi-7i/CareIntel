@@ -9,18 +9,32 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, status
 
-from careintel.api.deps import CurrentUserDep, DbSessionDep, get_case_service, require_permission
+from careintel.api.deps import (
+    CurrentUserDep,
+    DbSessionDep,
+    get_case_service,
+    get_encounter_service,
+    require_permission,
+)
 from careintel.api.v1.cases.schemas import (
     CaseHistoryResponse,
     CaseResponse,
     CaseStateHistoryEntry,
     CreateCaseRequest,
+    CreateEncounterRequest,
+    EncounterListResponse,
+    EncounterResponse,
     TransitionRequest,
 )
 from careintel.application.case.case_service import CaseService
+from careintel.application.case.encounter_service import EncounterService
 from careintel.core.correlation import get_correlation_id
 from careintel.domain.auth.permissions import Permission
-from careintel.domain.case.commands import CreateCaseCommand, TransitionCaseCommand
+from careintel.domain.case.commands import (
+    CreateCaseCommand,
+    CreateEncounterCommand,
+    TransitionCaseCommand,
+)
 from careintel.domain.consent.models import ConsentContext
 from careintel.domain.consent.policy import ConsentPolicy
 from careintel.domain.consent.purpose import ConsentPurpose
@@ -30,6 +44,7 @@ router = APIRouter(prefix="/cases", tags=["cases"])
 
 
 CaseServiceDep = Annotated[CaseService, Depends(get_case_service)]
+EncounterServiceDep = Annotated[EncounterService, Depends(get_encounter_service)]
 
 
 @router.post(
@@ -141,3 +156,46 @@ async def get_case_history(
     history = await case_service.get_state_history(case_id, user)
     entries = [CaseStateHistoryEntry.model_validate(h) for h in history]
     return CaseHistoryResponse(case_id=case_id, history=entries)
+
+
+@router.post(
+    "/{case_id}/encounters",
+    response_model=EncounterResponse,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[require_permission(Permission.CASE_WRITE)],
+)
+async def create_encounter(
+    case_id: uuid.UUID,
+    request: CreateEncounterRequest,
+    service: EncounterServiceDep,
+    user: CurrentUserDep,
+) -> EncounterResponse:
+    encounter = await service.create(
+        CreateEncounterCommand(
+            case_id=case_id,
+            encounter_type=request.encounter_type,
+            occurred_at=request.occurred_at,
+            notes=request.notes,
+            actor_id=user.id,
+            correlation_id=get_correlation_id(),
+        ),
+        user,
+    )
+    return EncounterResponse.model_validate(encounter)
+
+
+@router.get(
+    "/{case_id}/encounters",
+    response_model=EncounterListResponse,
+    dependencies=[require_permission(Permission.CASE_READ)],
+)
+async def list_encounters(
+    case_id: uuid.UUID,
+    service: EncounterServiceDep,
+    user: CurrentUserDep,
+) -> EncounterListResponse:
+    encounters = await service.list_for_case(case_id, user, get_correlation_id())
+    return EncounterListResponse(
+        case_id=case_id,
+        encounters=[EncounterResponse.model_validate(item) for item in encounters],
+    )

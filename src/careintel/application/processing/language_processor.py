@@ -10,17 +10,10 @@ from datetime import UTC, datetime
 
 from ulid import ULID
 
+from careintel.application.processing.access import ProcessingAccessGuard
 from careintel.core.config import Settings
-from careintel.core.errors import (
-    AuthorizationError,
-    CareIntelError,
-    NotFoundError,
-)
 from careintel.domain.audit.events import AuditEventType
 from careintel.domain.auth.models import UserContext
-from careintel.domain.auth.permissions import Permission
-from careintel.domain.auth.policy import AuthorizationPolicy
-from careintel.domain.evidence.states import EvidenceState
 from careintel.domain.processing.processing_status import ProcessingStatus
 from careintel.domain.processing.processor_type import ProcessorType
 from careintel.infrastructure.language.port import LanguageProvider
@@ -31,7 +24,6 @@ from careintel.persistence.models.processing import (
     ProcessingRunORM,
 )
 from careintel.persistence.repositories.evidence_outbox_repo import EvidenceOutboxRepository
-from careintel.persistence.repositories.evidence_repo import EvidenceRepository
 from careintel.persistence.repositories.processing_repo import ProcessingRepository
 
 
@@ -41,14 +33,14 @@ class LanguageProcessor:
     def __init__(
         self,
         settings: Settings,
-        evidence_repo: EvidenceRepository,
+        access_guard: ProcessingAccessGuard,
         processing_repo: ProcessingRepository,
         outbox_repo: EvidenceOutboxRepository,
         language_provider: LanguageProvider,
         translation_provider: TranslationProvider,
     ) -> None:
         self.settings = settings
-        self.evidence_repo = evidence_repo
+        self.access_guard = access_guard
         self.processing_repo = processing_repo
         self.outbox_repo = outbox_repo
         self.language_provider = language_provider
@@ -66,19 +58,7 @@ class LanguageProcessor:
         """
         Executes Language Pipeline for given text.
         """
-        evidence = await self.evidence_repo.get_by_id(evidence_id)
-        if not evidence:
-            raise NotFoundError(f"Evidence {evidence_id} not found.")
-
-        if not AuthorizationPolicy.evaluate(
-            user, Permission.PROCESSING_WRITE, str(evidence.case_id)
-        ):
-            raise AuthorizationError("Missing PROCESSING_WRITE permission for this case.")
-
-        if evidence.state != EvidenceState.READY:
-            raise CareIntelError(
-                f"Evidence must be READY for processing. Current: {evidence.state}"
-            )
+        evidence = await self.access_guard.require_ready_evidence(evidence_id, user)
 
         config_version = "v1"
         existing_run = await self.processing_repo.get_run_by_idempotency_key(
@@ -86,10 +66,7 @@ class LanguageProcessor:
             processor_type=ProcessorType.LANGUAGE_NORMALIZATION.value,
             config_version=config_version,
         )
-        if existing_run and existing_run.status in (
-            ProcessingStatus.COMPLETED,
-            ProcessingStatus.RUNNING,
-        ):
+        if existing_run:
             return existing_run.id
 
         run_id = uuid.uuid4()
@@ -98,11 +75,12 @@ class LanguageProcessor:
             evidence_id=evidence_id,
             processor_type=ProcessorType.LANGUAGE_NORMALIZATION.value,
             provider=self.settings.language_detection_provider,
-            status=ProcessingStatus.RUNNING.value,
+            status=ProcessingStatus.PENDING.value,
             config_version=config_version,
-            started_at=datetime.now(UTC),
+            started_at=datetime.now(UTC).replace(tzinfo=None),
         )
         await self.processing_repo.add_run(run)
+        run.status = ProcessingStatus.RUNNING.value
 
         try:
             detections = await self.language_provider.detect_language(text)
@@ -131,13 +109,16 @@ class LanguageProcessor:
             await self.processing_repo.session.flush()
 
             run.status = ProcessingStatus.COMPLETED.value
-            run.completed_at = datetime.now(UTC)
+            run.completed_at = datetime.now(UTC).replace(tzinfo=None)
 
-        except Exception as e:
-            self.logger.error(f"Language Pipeline failed for run {run_id}: {e}")
+        except Exception as exc:
+            self.logger.error(
+                "Language processing failed",
+                extra={"run_id": str(run_id), "error_type": type(exc).__name__},
+            )
             run.status = ProcessingStatus.FAILED.value
-            run.failure_reason = str(e)
-            run.completed_at = datetime.now(UTC)
+            run.failure_reason = type(exc).__name__
+            run.completed_at = datetime.now(UTC).replace(tzinfo=None)
 
         outbox_event = EvidenceOutboxORM(
             id=str(ULID()),
