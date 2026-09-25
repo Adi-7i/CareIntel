@@ -79,8 +79,8 @@ class AuthService:
             id=session_id,
             user_id=user.id,
             jti=claims.jti,
-            issued_at=claims.iat,
-            expires_at=expires,
+            issued_at=claims.iat or now,
+            expires_at=claims.exp or expires,
         )
         await self.session_repo.create(token_session)
 

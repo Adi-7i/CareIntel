@@ -67,14 +67,18 @@ class TestSettings:
     def test_is_production_flag(self) -> None:
         """is_production returns True only for production environment."""
         prod = Settings(  # type: ignore[call-arg,arg-type]
+            _env_file=None,
             app_env=Environment.PRODUCTION,
             app_debug=False,
             database_url="postgresql+asyncpg://u:p@h:5432/d",
             secret_key="a-very-long-secret-key-for-production-environment",
+            azure_storage_connection_string="DefaultEndpointsProtocol=https;AccountName=test;AccountKey=test;EndpointSuffix=core.windows.net",
+            redis_url="redis://localhost:6379/0",
         )
         assert prod.is_production is True
 
         dev = Settings(  # type: ignore[call-arg,arg-type]
+            _env_file=None,
             database_url="postgresql+asyncpg://u:p@h:5432/d",
             secret_key="some-secret",
         )
@@ -85,6 +89,7 @@ class TestSettings:
         from careintel.core.config import Environment
 
         test = Settings(  # type: ignore[call-arg,arg-type]
+            _env_file=None,
             app_env=Environment.TESTING,
             database_url="postgresql+asyncpg://u:p@h:5432/d",
             secret_key="some-secret",
@@ -94,6 +99,7 @@ class TestSettings:
     def test_secret_key_is_secret_str(self) -> None:
         """secret_key is a SecretStr — str() does not reveal the value."""
         s = Settings(  # type: ignore[call-arg,arg-type]
+            _env_file=None,
             database_url="postgresql+asyncpg://u:p@h:5432/d",
             secret_key="my-super-secret",
         )
@@ -103,6 +109,7 @@ class TestSettings:
     def test_database_url_is_secret_str(self) -> None:
         """database_url is a SecretStr — str() does not reveal credentials."""
         s = Settings(  # type: ignore[call-arg,arg-type]
+            _env_file=None,
             database_url="postgresql+asyncpg://admin:pass@host/db",
             secret_key="some-secret",
         )
@@ -111,6 +118,7 @@ class TestSettings:
     def test_cors_allowed_origins_defaults_empty(self) -> None:
         """CORS origins default to an empty list."""
         s = Settings(  # type: ignore[call-arg,arg-type]
+            _env_file=None,
             database_url="postgresql+asyncpg://u:p@h:5432/d",
             secret_key="some-secret",
         )

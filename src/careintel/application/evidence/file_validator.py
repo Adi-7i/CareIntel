@@ -6,9 +6,44 @@ import hashlib
 import os
 from typing import IO
 
-import magic
+try:
+    import magic
+except (ImportError, Exception):
+    magic = None
 
 from careintel.core.errors import FileTooLargeError, MimeMismatchError, UnsupportedFileTypeError
+
+
+def _detect_mime_from_bytes(header_bytes: bytes) -> str | None:
+    if header_bytes.startswith(b"%PDF-"):
+        return "application/pdf"
+    if header_bytes.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    if header_bytes.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    if header_bytes.startswith(b"RIFF") and len(header_bytes) >= 12 and header_bytes[8:12] == b"WEBP":
+        return "image/webp"
+    if header_bytes.startswith(b"II*\x00") or header_bytes.startswith(b"MM\x00*"):
+        return "image/tiff"
+    if header_bytes.startswith(b"RIFF") and len(header_bytes) >= 12 and header_bytes[8:12] == b"WAVE":
+        return "audio/wav"
+    if header_bytes.startswith(b"ID3") or (len(header_bytes) >= 2 and header_bytes[:2] in (b"\xff\xfb", b"\xff\xf3", b"\xff\xf2")):
+        return "audio/mpeg"
+    if len(header_bytes) >= 8 and header_bytes[4:8] == b"ftyp":
+        return "audio/mp4"
+    if header_bytes.startswith(b"OggS"):
+        return "audio/ogg"
+    if header_bytes.startswith(b"fLaC"):
+        return "audio/flac"
+    if b"\x00" in header_bytes:
+        return None
+    try:
+        decoded = header_bytes.decode("utf-8")
+        if decoded.isprintable() or any(c in "\r\n\t" for c in decoded):
+            return "text/plain"
+        return None
+    except UnicodeDecodeError:
+        return None
 
 
 class FileValidator:
@@ -48,7 +83,16 @@ class FileValidator:
         Check the magic bytes to determine the MIME type.
         Raises MimeMismatchError if it cannot be determined.
         """
-        mime_type = magic.from_buffer(header_bytes, mime=True)
+        mime_type = None
+        if magic is not None:
+            try:
+                mime_type = magic.from_buffer(header_bytes, mime=True)
+            except Exception:
+                mime_type = None
+
+        if not mime_type or mime_type == "application/octet-stream":
+            mime_type = _detect_mime_from_bytes(header_bytes)
+
         if not mime_type or mime_type == "application/octet-stream":
             raise MimeMismatchError("Could not determine valid MIME type from file signature.")
         return mime_type

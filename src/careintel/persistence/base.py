@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import datetime
 
-from sqlalchemy import MetaData
+from sqlalchemy import DateTime, MetaData
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from sqlalchemy.sql import func
 
@@ -24,6 +24,9 @@ class Base(DeclarativeBase):
     """Base class for all SQLAlchemy ORM models."""
 
     metadata = MetaData(naming_convention=convention)
+    type_annotation_map = {
+        datetime.datetime: DateTime(timezone=True),
+    }
 
 
 class TimestampMixin:
