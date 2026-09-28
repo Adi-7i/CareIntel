@@ -64,7 +64,7 @@ class AsyncTaskService:
         if existing:
             return self._to_domain(existing)
 
-        now = datetime.datetime.now(datetime.UTC)
+        now = datetime.datetime.now(datetime.UTC).replace(tzinfo=None)
         orm = AsyncTaskORM(
             id=uuid.uuid4(),
             task_type=payload.task_type,
@@ -116,12 +116,31 @@ class AsyncTaskService:
         """Record a heartbeat for a running task."""
         await self.task_repo.update_heartbeat(task_id)
 
+    async def claim_for_execution(
+        self, task_id: uuid.UUID, celery_task_id: str | None = None
+    ) -> AsyncTask | None:
+        orm = await self.task_repo.claim_for_execution(task_id, celery_task_id)
+        return self._to_domain(orm) if orm is not None else None
+
+    async def record_success(self, task_id: uuid.UUID, result: dict[str, object]) -> None:
+        await self.task_repo.record_success(task_id, result)
+
+    async def record_retry(
+        self, task_id: uuid.UUID, error_category: str, failure_reason: str
+    ) -> None:
+        await self.task_repo.record_retry(task_id, error_category, failure_reason)
+
+    async def record_failure(
+        self, task_id: uuid.UUID, error_category: str, failure_reason: str
+    ) -> None:
+        await self.task_repo.record_failure(task_id, error_category, failure_reason)
+
     async def sweep_stale_tasks(self, stale_threshold_seconds: int = 120) -> list[uuid.UUID]:
         """
         Find RUNNING tasks older than the threshold, and transition them to PENDING
         or FAILED (if max attempts reached).
         """
-        threshold = datetime.datetime.now(datetime.UTC) - datetime.timedelta(
+        threshold = datetime.datetime.now(datetime.UTC).replace(tzinfo=None) - datetime.timedelta(
             seconds=stale_threshold_seconds
         )
         stale_orms = await self.task_repo.find_stale_tasks(threshold)

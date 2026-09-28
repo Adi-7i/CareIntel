@@ -14,6 +14,7 @@ from careintel.application.case.case_service import CaseService
 from careintel.application.evidence.file_validator import FileValidator
 from careintel.core.errors import (
     DuplicateEvidenceError,
+    InvalidTransitionError,
     NotFoundError,
     StorageError,
     UnsupportedFileTypeError,
@@ -155,6 +156,18 @@ class EvidenceService:
         if await self.encounter_repo.get_for_case(encounter_id, case_id) is None:
             raise NotFoundError("Encounter not found for case.")
 
+    @staticmethod
+    def _require_case_accepts_evidence_changes(case_orm: CaseORM) -> None:
+        """Prevent authoritative evidence changes from silently surviving approval."""
+        if case_orm.state in {
+            CaseState.REVIEWED.value,
+            CaseState.REFERRED.value,
+            CaseState.COMPLETED.value,
+        }:
+            raise InvalidTransitionError(
+                "Evidence cannot change after human approval; reopen review first."
+            )
+
     async def _append_audit(
         self,
         event_type: str,
@@ -181,6 +194,7 @@ class EvidenceService:
     ) -> EvidenceAggregate:
         """Register text-based evidence and transition case state if needed."""
         case_orm = await self._get_authorized_case(cmd.case_id, user, Permission.EVIDENCE_WRITE)
+        self._require_case_accepts_evidence_changes(case_orm)
         await self._require_data_processing_consent(cmd.consent_id, case_orm)
         await self._require_encounter_in_case(cmd.encounter_id, cmd.case_id)
 
@@ -251,6 +265,7 @@ class EvidenceService:
     ) -> EvidenceAggregate:
         """Start a multipart file upload."""
         case_orm = await self._get_authorized_case(cmd.case_id, user, Permission.EVIDENCE_WRITE)
+        self._require_case_accepts_evidence_changes(case_orm)
         await self._require_data_processing_consent(cmd.consent_id, case_orm)
         await self._require_encounter_in_case(cmd.encounter_id, cmd.case_id)
 
@@ -290,7 +305,10 @@ class EvidenceService:
         if not evidence_orm:
             raise NotFoundError(f"Evidence {evidence_id} not found.")
 
-        await self._get_authorized_case(evidence_orm.case_id, user, Permission.EVIDENCE_WRITE)
+        case_orm = await self._get_authorized_case(
+            evidence_orm.case_id, user, Permission.EVIDENCE_WRITE
+        )
+        self._require_case_accepts_evidence_changes(case_orm)
 
         if evidence_orm.state != EvidenceState.PENDING_UPLOAD:
             raise UnsupportedFileTypeError("Evidence is not in PENDING_UPLOAD state.")

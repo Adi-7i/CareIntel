@@ -28,9 +28,7 @@ class CaseStateMachine:
         CaseState.TRIAGE_DRAFT_READY: frozenset({CaseState.REVIEW_PENDING}),
         CaseState.REVIEW_PENDING: frozenset({CaseState.REVIEWED, CaseState.ESCALATED}),
         CaseState.REVIEWED: frozenset({CaseState.REFERRED, CaseState.COMPLETED}),
-        CaseState.ESCALATED: frozenset(
-            {CaseState.REVIEWED}
-        ),  # E.g., resolved escalation goes to REVIEWED
+        CaseState.ESCALATED: frozenset({CaseState.REVIEW_PENDING}),
         CaseState.REFERRED: frozenset({CaseState.COMPLETED}),
         # Terminal states have no outbound transitions (except to FAILED, see below)
         CaseState.COMPLETED: frozenset(),

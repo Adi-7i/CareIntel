@@ -30,7 +30,13 @@ def shutdown_worker_db(**kwargs: Any) -> None:
     global _engine
     if _engine:
         try:
-            asyncio.run(dispose_engine(_engine))
+            from careintel.workers.providers import close_worker_providers
+
+            async def _shutdown() -> None:
+                await close_worker_providers()
+                await dispose_engine(_engine)
+
+            asyncio.run(_shutdown())
         except Exception:
             logger.exception("Failed to dispose the worker database engine")
 

@@ -1,75 +1,47 @@
-"""
-Thin Retrieval Tasks.
-"""
+"""Celery adapter for persisted case-scoped retrieval commands."""
+
+from __future__ import annotations
 
 import asyncio
-import uuid
 from typing import Any
 
-from celery.exceptions import SoftTimeLimitExceeded
-from celery.utils.log import get_task_logger
-
-from careintel.application.workflow.task_service import AsyncTaskService
-from careintel.core.errors import CapabilityNotImplementedError, ServiceUnavailableError
-from careintel.domain.workflow.task_states import AsyncTaskStatus
-from careintel.persistence.repositories.task_repo import AsyncTaskRepository
+from careintel.domain.retrieval.status import SearchMode
+from careintel.domain.workflow.models import AsyncTask
 from careintel.workers.celery_app import celery_app
-from careintel.workers.context import setup_worker_context
-from careintel.workers.db import get_session_factory
+from careintel.workers.executor import RetryableTaskError, execute_durable_task
+from careintel.workers.services import build_retrieval_service
 
-logger = get_task_logger(__name__)
+
+async def _handle_retrieval(session: Any, task: AsyncTask, actor: Any) -> dict[str, object]:
+    config = task.payload.config
+    service = await build_retrieval_service(session)
+    result = await service.retrieve_knowledge(
+        actor,
+        task.case_id,
+        str(config["query"]),
+        str(config["corpus_version"]),
+        SearchMode(str(config.get("search_mode", SearchMode.HYBRID.value))),
+        int(config.get("top_k", 10)),
+    )
+    return {
+        "retrieval_run_id": str(result.metadata.retrieval_run_id),
+        "status": result.metadata.status.value,
+        "candidate_count": result.metadata.candidate_count,
+    }
 
 
 @celery_app.task(
     bind=True,
     name="careintel.tasks.retrieval.run_retrieval",
-    autoretry_for=(ServiceUnavailableError, TimeoutError),
-    retry_kwargs={"max_retries": 3},
+    max_retries=3,
     retry_backoff=True,
     retry_backoff_max=120,
     retry_jitter=True,
 )
-def run_retrieval(self: Any, task_id: str) -> None:
-    """Run retrieval for a case."""
-    asyncio.run(_async_run_retrieval(task_id))
-
-
-async def _async_run_retrieval(task_id_str: str) -> None:
-    task_id = uuid.UUID(task_id_str)
-    session_factory = get_session_factory()
-
-    async with session_factory() as session:
-        task_repo = AsyncTaskRepository(session)
-        task_service = AsyncTaskService(task_repo)
-
-        task = await task_service.get_task(task_id)
-        if not task:
-            return
-
-        if task.status in (AsyncTaskStatus.SUCCEEDED, AsyncTaskStatus.CANCELLED):
-            return
-
-        await task_service.transition_status(task_id, AsyncTaskStatus.RUNNING)
-        await session.commit()
-
+def run_retrieval(self: Any, task_id: str) -> dict[str, object] | None:
     try:
-        async with session_factory() as session:
-            with setup_worker_context(task.correlation_id, str(task.actor_id)):
-                raise CapabilityNotImplementedError(
-                    "Retrieval worker execution is not wired to the application service."
-                )
-
-    except SoftTimeLimitExceeded:
-        async with session_factory() as session:
-            task_repo = AsyncTaskRepository(session)
-            task_service = AsyncTaskService(task_repo)
-            await task_service.transition_status(task_id, AsyncTaskStatus.FAILED)
-            await session.commit()
-        raise
-    except Exception as exc:
-        async with session_factory() as session:
-            task_service = AsyncTaskService(AsyncTaskRepository(session))
-            await task_service.transition_status(task_id, AsyncTaskStatus.FAILED)
-            await session.commit()
-        logger.error("Retrieval task failed", extra={"error_type": type(exc).__name__})
-        raise
+        return asyncio.run(
+            execute_durable_task(task_id, _handle_retrieval, celery_task_id=self.request.id)
+        )
+    except RetryableTaskError as exc:
+        raise self.retry(exc=exc) from exc

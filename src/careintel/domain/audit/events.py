@@ -85,12 +85,16 @@ class AuditEventType(StrEnum):
     TASK_RETRYING = "task_retrying"
     TASK_STALE_RECOVERED = "task_stale_recovered"
     WORKFLOW_ADVANCE_REQUESTED = "workflow_advance_requested"
+    OUTBOX_DISPATCHED = "outbox_dispatched"
+    OUTBOX_DISPATCH_FAILED = "outbox_dispatch_failed"
+    OUTBOX_REPLAYED = "outbox_replayed"
 
     # Review (Phase 9)
     REVIEW_QUEUE_ENTERED = "review_queue_entered"
     REVIEWER_ASSIGNED = "reviewer_assigned"
     REVIEWER_REASSIGNED = "reviewer_reassigned"
     REVIEW_STARTED = "review_started"
+    REVIEW_WORKSPACE_ACCESSED = "review_workspace_accessed"
     REVIEW_DECISION_SUBMITTED = "review_decision_submitted"
     REVIEW_COMPLETED = "review_completed"
 
@@ -113,6 +117,7 @@ class AuditEventType(StrEnum):
 
     # Handoff (Phase 9)
     HANDOFF_INITIATED = "handoff_initiated"
+    HANDOFF_SEND_REQUESTED = "handoff_send_requested"
     HANDOFF_SENT = "handoff_sent"
     HANDOFF_DELIVERY_FAILED = "handoff_delivery_failed"
     HANDOFF_ACKNOWLEDGED = "handoff_acknowledged"

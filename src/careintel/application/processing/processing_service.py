@@ -84,7 +84,7 @@ class ProcessingService:
 
         from careintel.persistence.models.evidence import EvidenceOutboxORM
 
-        now = datetime.datetime.now(datetime.UTC)
+        now = datetime.datetime.now(datetime.UTC).replace(tzinfo=None)
         outbox_event = EvidenceOutboxORM(
             id=str(ULID()),
             event_type="EVIDENCE_PROCESSING_REQUESTED",

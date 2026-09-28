@@ -29,6 +29,11 @@ class ReviewQueueItemORM(Base):
         nullable=False,
         unique=True,
     )
+    encounter_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("encounters.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     status: Mapped[str] = mapped_column(String, nullable=False)
     assigned_reviewer_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
@@ -88,6 +93,12 @@ class ReviewDecisionORM(Base):
         ForeignKey("users.id"),
         nullable=False,
     )
+    draft_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("ai_drafts.id", ondelete="RESTRICT"),
+        nullable=True,
+    )
+    draft_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
     decision_type: Mapped[str] = mapped_column(String, nullable=False)
     rationale: Mapped[str | None] = mapped_column(Text, nullable=True)
     case_version: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -96,7 +107,10 @@ class ReviewDecisionORM(Base):
         server_default=text("now()"), nullable=False
     )
 
-    __table_args__ = (Index("ix_review_decisions_case", "case_id"),)
+    __table_args__ = (
+        Index("ix_review_decisions_case", "case_id"),
+        UniqueConstraint("case_id", "case_version", name="uq_review_decisions_case_version"),
+    )
 
 
 class ReviewerNoteORM(Base):
@@ -130,7 +144,12 @@ class ReviewerNoteORM(Base):
 
     __table_args__ = (
         Index("ix_reviewer_notes_case", "case_id"),
-        UniqueConstraint("case_id", name="uq_reviewer_notes_active"),
+        Index(
+            "uq_reviewer_notes_active",
+            "case_id",
+            unique=True,
+            postgresql_where=text("superseded_by IS NULL"),
+        ),
     )
 
 
@@ -196,4 +215,12 @@ class EscalationRecordORM(Base):
         server_default=text("now()"), nullable=False
     )
 
-    __table_args__ = (Index("ix_escalation_records_case", "case_id"),)
+    __table_args__ = (
+        Index("ix_escalation_records_case", "case_id"),
+        Index(
+            "uq_escalation_records_open_case",
+            "case_id",
+            unique=True,
+            postgresql_where=text("status = 'OPEN'"),
+        ),
+    )

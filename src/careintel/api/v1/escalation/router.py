@@ -1,34 +1,62 @@
-"""
-Escalation API endpoints.
-"""
+"""Human-controlled escalation endpoints."""
+
+from __future__ import annotations
 
 import uuid
-from typing import Annotated, Any
+from typing import Annotated
 
-from fastapi import APIRouter, Body, Depends
+from fastapi import APIRouter, Depends, status
 
-from careintel.api.deps import get_current_user
-from careintel.core.errors import CapabilityNotImplementedError
+from careintel.api.deps import get_current_user, get_escalation_service
+from careintel.api.v1.escalation.schemas import (
+    CreateEscalationRequest,
+    EscalationResponse,
+    ResolveEscalationRequest,
+)
+from careintel.application.escalation.escalation_service import EscalationService
+from careintel.core.correlation import get_correlation_id
 from careintel.domain.auth.models import UserContext
 
 router = APIRouter(tags=["escalation"])
 
 
-@router.post("/cases/{case_id}/escalation", summary="Create escalation")
+@router.post(
+    "/cases/{case_id}/escalation",
+    response_model=EscalationResponse,
+    status_code=status.HTTP_201_CREATED,
+)
 async def create_escalation(
     case_id: uuid.UUID,
-    reason: Annotated[str, Body(embed=True)],
-    expected_version: Annotated[int, Body(embed=True)],
+    request: CreateEscalationRequest,
     actor: Annotated[UserContext, Depends(get_current_user)],
-) -> dict[str, Any]:
-    raise CapabilityNotImplementedError("Escalation API is not safely wired to persistence.")
+    service: Annotated[EscalationService, Depends(get_escalation_service)],
+) -> EscalationResponse:
+    return EscalationResponse.model_validate(
+        await service.create_escalation(
+            case_id,
+            request.reason,
+            request.expected_case_version,
+            request.expected_queue_version,
+            actor,
+            get_correlation_id(),
+        )
+    )
 
 
-@router.post("/escalations/{escalation_id}/resolve", summary="Resolve escalation")
+@router.post("/escalations/{escalation_id}/resolve", response_model=EscalationResponse)
 async def resolve_escalation(
     escalation_id: uuid.UUID,
-    resolution_notes: Annotated[str, Body(embed=True)],
-    expected_case_version: Annotated[int, Body(embed=True)],
+    request: ResolveEscalationRequest,
     actor: Annotated[UserContext, Depends(get_current_user)],
-) -> dict[str, Any]:
-    raise CapabilityNotImplementedError()
+    service: Annotated[EscalationService, Depends(get_escalation_service)],
+) -> EscalationResponse:
+    return EscalationResponse.model_validate(
+        await service.resolve_escalation(
+            escalation_id,
+            request.resolution_notes,
+            request.expected_case_version,
+            request.expected_queue_version,
+            actor,
+            get_correlation_id(),
+        )
+    )

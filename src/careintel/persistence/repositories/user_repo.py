@@ -10,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from careintel.domain.auth.models import UserContext
 from careintel.persistence.models.user import RoleORM, UserORM, UserRoleORM
 
 
@@ -51,6 +52,18 @@ class UserRepository:
         for role_name, facility_id in result.tuples():
             role_facilities[role_name] = facility_id
         return role_facilities
+
+    async def get_user_context(self, user_id: uuid.UUID) -> UserContext | None:
+        user = await self.get_with_roles(user_id)
+        if user is None:
+            return None
+        return UserContext(
+            id=user.id,
+            is_active=user.is_active,
+            roles={role.name for role in user.roles},
+            permissions={permission.code for role in user.roles for permission in role.permissions},
+            role_facilities=await self.get_role_facilities(user.id),
+        )
 
     async def create(self, user: UserORM) -> UserORM:
         """Create a new user."""

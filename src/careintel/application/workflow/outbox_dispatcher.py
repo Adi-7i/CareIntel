@@ -1,19 +1,22 @@
-"""
-Unified Outbox Dispatcher.
-"""
+"""Durable dispatcher for the existing case and evidence outboxes."""
+
+from __future__ import annotations
 
 import asyncio
 import datetime
 import logging
-from collections.abc import Sequence
-from typing import Any
+import socket
+import uuid
+from dataclasses import dataclass
+from typing import Any, ClassVar
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from careintel.application.workflow.task_service import AsyncTaskService
+from careintel.domain.audit.events import AuditEventType
 from careintel.domain.workflow.models import AsyncTaskPayload
-from careintel.domain.workflow.task_states import AsyncTaskStatus
+from careintel.persistence.models.audit import AuditLogORM
 from careintel.persistence.models.case import CaseOutboxORM
 from careintel.persistence.models.evidence import EvidenceOutboxORM
 from careintel.persistence.repositories.task_repo import AsyncTaskRepository
@@ -22,110 +25,261 @@ from careintel.workers.celery_app import celery_app
 logger = logging.getLogger(__name__)
 
 
+class DispatchStatus:
+    PENDING = "PENDING"
+    CLAIMED = "CLAIMED"
+    RETRY = "RETRY"
+    DISPATCHED = "DISPATCHED"
+    FAILED = "FAILED"
+    IGNORED = "IGNORED"
+
+
+@dataclass(frozen=True)
+class ClaimedDispatch:
+    outbox_kind: str
+    event_id: str
+    task_id: uuid.UUID
+    task_name: str
+    queue: str
+
+
 class UnifiedOutboxDispatcher:
-    """
-    Polls outbox tables, creates AsyncTasks, and dispatches to Celery.
-    """
+    """Claims in PostgreSQL, commits, then publishes stable task IDs to Celery."""
 
-    def __init__(self, session_factory: Any) -> None:
-        # We need a session factory because the dispatcher runs in a loop
-        # and should create fresh short-lived sessions.
+    _TASK_MAP: ClassVar[dict[str, str]] = {
+        "EVIDENCE_PROCESSING_REQUESTED": "careintel.tasks.processing.run_processing",
+        "RETRIEVAL_REQUESTED": "careintel.tasks.retrieval.run_retrieval",
+        "AI_RUN_REQUESTED": "careintel.tasks.ai.run_ai",
+        "CASE_WORKFLOW_ADVANCE": "careintel.tasks.workflow.advance_case",
+        "STRUCTURING_REQUESTED": "careintel.tasks.workflow.trigger_structuring",
+        "HANDOFF_SEND_REQUESTED": "careintel.tasks.handoff.deliver_handoff",
+    }
+    _MODELS: ClassVar[dict[str, Any]] = {
+        "case": CaseOutboxORM,
+        "evidence": EvidenceOutboxORM,
+    }
+
+    def __init__(
+        self,
+        session_factory: Any,
+        *,
+        dispatcher_id: str | None = None,
+        claim_timeout_seconds: int = 120,
+    ) -> None:
         self.session_factory = session_factory
+        self.dispatcher_id = dispatcher_id or f"{socket.gethostname()}-{uuid.uuid4()}"
+        self.claim_timeout_seconds = claim_timeout_seconds
 
-    async def _process_batch(
-        self, session: AsyncSession, model_cls: Any, batch_size: int = 50
-    ) -> int:
-        """Process a single batch of events for a given outbox model."""
-        # 1. Select unpublished with SKIP LOCKED
+    @staticmethod
+    def _now() -> datetime.datetime:
+        return datetime.datetime.now(datetime.UTC).replace(tzinfo=None)
+
+    async def _claim_batch(
+        self, session: AsyncSession, outbox_kind: str, batch_size: int
+    ) -> list[ClaimedDispatch]:
+        model_cls = self._MODELS[outbox_kind]
+        now = self._now()
+        stale_before = now - datetime.timedelta(seconds=self.claim_timeout_seconds)
         stmt = (
             select(model_cls)
-            .where(model_cls.published_at.is_(None))
-            .order_by(model_cls.id)
+            .where(
+                model_cls.published_at.is_(None),
+                model_cls.dispatch_attempts < model_cls.max_dispatch_attempts,
+                or_(model_cls.next_attempt_at.is_(None), model_cls.next_attempt_at <= now),
+                or_(
+                    model_cls.dispatch_status.in_([DispatchStatus.PENDING, DispatchStatus.RETRY]),
+                    (
+                        (model_cls.dispatch_status == DispatchStatus.CLAIMED)
+                        & (model_cls.claimed_at < stale_before)
+                    ),
+                ),
+            )
+            .order_by(model_cls.occurred_at, model_cls.id)
             .limit(batch_size)
             .with_for_update(skip_locked=True)
         )
-        result = await session.execute(stmt)
-        events: Sequence[Any] = result.scalars().all()
-
-        if not events:
-            return 0
-
+        events = list((await session.execute(stmt)).scalars().all())
         task_service = AsyncTaskService(AsyncTaskRepository(session))
-        processed = 0
-        now = datetime.datetime.now(datetime.UTC)
+        claimed: list[ClaimedDispatch] = []
 
         for event in events:
-            try:
-                # 2. Map event to TaskPayload
-                # We do this based on the event_type mapping to a Celery task.
-                task_name = self._map_event_to_task_name(event.event_type)
+            task_name = self._TASK_MAP.get(event.event_type)
+            if task_name is None:
+                event.dispatch_status = DispatchStatus.FAILED
+                event.dispatch_attempts = event.max_dispatch_attempts
+                event.last_error_category = "UnsupportedEventType"
+                event.claimed_at = None
+                event.claimed_by = None
+                continue
+            if event.actor_id is None:
+                event.dispatch_status = DispatchStatus.FAILED
+                event.dispatch_attempts = event.max_dispatch_attempts
+                event.last_error_category = "MissingActor"
+                continue
 
-                if not task_name:
-                    # Not all events trigger async tasks.
-                    # Just mark as published and skip task creation.
-                    event.published_at = now
-                    processed += 1
-                    continue
-
-                payload = self._build_payload(event, task_name)
-
-                # 3. Idempotently create task
-                task = await task_service.get_or_create_task(
-                    idempotency_key=f"outbox_{event.id}", payload=payload, causation_id=event.id
-                )
-
-                # 4. Dispatch to Celery
-                celery_app.send_task(
-                    task_name,
-                    kwargs={"task_id": str(task.id)},
+            task = await task_service.get_or_create_task(
+                idempotency_key=f"outbox_{event.id}",
+                payload=self._build_payload(event, task_name),
+                causation_id=event.id,
+            )
+            event.dispatch_status = DispatchStatus.CLAIMED
+            event.dispatch_attempts += 1
+            event.claimed_at = now
+            event.claimed_by = self.dispatcher_id
+            event.last_error_category = None
+            event.celery_task_id = str(task.id)
+            claimed.append(
+                ClaimedDispatch(
+                    outbox_kind=outbox_kind,
+                    event_id=event.id,
+                    task_id=task.id,
+                    task_name=task_name,
                     queue=self._route_task(task_name),
                 )
+            )
 
-                # 5. Mark outbox published & task queued
-                event.published_at = now
-                await task_service.transition_status(task.id, AsyncTaskStatus.QUEUED)
-
-                processed += 1
-            except Exception as exc:
-                logger.error(
-                    "Failed to process outbox event",
-                    extra={"error_type": type(exc).__name__},
-                )
-                # We don't rollback the whole batch, we just leave this event unpublished
-                # so it will be retried. Raising clears the failed transaction.
-                raise
-
-        # Commit batch
         await session.commit()
-        return processed
+        return claimed
 
-    def _map_event_to_task_name(self, event_type: str) -> str | None:
-        """Map a domain event to a Celery task name."""
-        mapping = {
-            "EVIDENCE_PROCESSING_REQUESTED": "careintel.tasks.processing.run_processing",
-            "PROCESSING_COMPLETED": "careintel.tasks.workflow.advance_case",
-            "EXTRACTION_COMPLETED": "careintel.tasks.workflow.trigger_structuring",
-            "RETRIEVAL_REQUESTED": "careintel.tasks.retrieval.run_retrieval",
-            "AI_RUN_REQUESTED": "careintel.tasks.ai.run_ai",
-            "CASE_WORKFLOW_ADVANCE": "careintel.tasks.workflow.advance_case",
-        }
-        return mapping.get(event_type)
+    async def _record_dispatched(self, claimed: ClaimedDispatch) -> None:
+        model_cls = self._MODELS[claimed.outbox_kind]
+        async with self.session_factory() as session:
+            event = (
+                await session.execute(
+                    select(model_cls).where(model_cls.id == claimed.event_id).with_for_update()
+                )
+            ).scalar_one_or_none()
+            if event is None or event.published_at is not None:
+                return
+            now = self._now()
+            event.dispatch_status = DispatchStatus.DISPATCHED
+            event.published_at = now
+            event.claimed_at = None
+            event.claimed_by = None
+            event.next_attempt_at = None
+            await AsyncTaskRepository(session).set_queued(claimed.task_id, str(claimed.task_id))
+            session.add(
+                AuditLogORM(
+                    event_type=AuditEventType.OUTBOX_DISPATCHED.value,
+                    actor_id=event.actor_id,
+                    target_id=claimed.task_id,
+                    target_type="async_task",
+                    correlation_id=event.correlation_id,
+                    outcome="SUCCESS",
+                    detail={"event_type": event.event_type},
+                )
+            )
+            await session.commit()
+
+    async def _record_dispatch_failure(self, claimed: ClaimedDispatch, error_category: str) -> None:
+        model_cls = self._MODELS[claimed.outbox_kind]
+        async with self.session_factory() as session:
+            event = (
+                await session.execute(
+                    select(model_cls).where(model_cls.id == claimed.event_id).with_for_update()
+                )
+            ).scalar_one_or_none()
+            if event is None or event.published_at is not None:
+                return
+            exhausted = event.dispatch_attempts >= event.max_dispatch_attempts
+            event.dispatch_status = DispatchStatus.FAILED if exhausted else DispatchStatus.RETRY
+            event.last_error_category = error_category
+            event.claimed_at = None
+            event.claimed_by = None
+            delay = min(300, 5 * (2 ** max(event.dispatch_attempts - 1, 0)))
+            event.next_attempt_at = (
+                None if exhausted else self._now() + datetime.timedelta(seconds=delay)
+            )
+            session.add(
+                AuditLogORM(
+                    event_type=AuditEventType.OUTBOX_DISPATCH_FAILED.value,
+                    actor_id=event.actor_id,
+                    target_id=claimed.task_id,
+                    target_type="async_task",
+                    correlation_id=event.correlation_id,
+                    outcome="FAILURE",
+                    detail={
+                        "event_type": event.event_type,
+                        "error_category": error_category,
+                        "retry_exhausted": exhausted,
+                    },
+                )
+            )
+            await session.commit()
+
+    async def dispatch_once(self, batch_size: int = 50) -> int:
+        """Claim and publish one bounded batch from both existing outboxes."""
+        claimed: list[ClaimedDispatch] = []
+        for kind in self._MODELS:
+            async with self.session_factory() as session:
+                claimed.extend(await self._claim_batch(session, kind, batch_size))
+
+        dispatched = 0
+        for item in claimed:
+            try:
+                celery_app.send_task(
+                    item.task_name,
+                    kwargs={"task_id": str(item.task_id)},
+                    task_id=str(item.task_id),
+                    queue=item.queue,
+                )
+            except Exception as exc:
+                await self._record_dispatch_failure(item, type(exc).__name__)
+                logger.error(
+                    "Outbox publication failed",
+                    extra={"task_id": str(item.task_id), "error_type": type(exc).__name__},
+                )
+            else:
+                await self._record_dispatched(item)
+                dispatched += 1
+        return dispatched
+
+    async def replay(self, outbox_kind: str, event_id: str, actor_id: uuid.UUID) -> None:
+        """Make a failed, unpublished event eligible for explicit operator replay."""
+        model_cls = self._MODELS.get(outbox_kind)
+        if model_cls is None:
+            raise ValueError("Unknown outbox kind.")
+        async with self.session_factory() as session:
+            event = (
+                await session.execute(
+                    select(model_cls).where(model_cls.id == event_id).with_for_update()
+                )
+            ).scalar_one_or_none()
+            if event is None:
+                raise ValueError("Outbox event not found.")
+            if event.published_at is not None:
+                return
+            event.dispatch_status = DispatchStatus.PENDING
+            event.dispatch_attempts = 0
+            event.next_attempt_at = None
+            event.claimed_at = None
+            event.claimed_by = None
+            event.last_error_category = None
+            session.add(
+                AuditLogORM(
+                    event_type=AuditEventType.OUTBOX_REPLAYED.value,
+                    actor_id=actor_id,
+                    target_id=None,
+                    target_type=f"{outbox_kind}_outbox",
+                    correlation_id=event.correlation_id,
+                    outcome="SUCCESS",
+                    detail={"event_type": event.event_type},
+                )
+            )
+            await session.commit()
 
     def _build_payload(self, event: Any, task_name: str) -> AsyncTaskPayload:
-        """Construct the payload for the async task."""
-        # Determine entity type
-        if isinstance(event, CaseOutboxORM):
+        config = dict(event.payload)
+        raw_entity_id = config.get("entity_id") or config.get("handoff_id")
+        if raw_entity_id is not None:
+            entity_id = uuid.UUID(str(raw_entity_id))
+            entity_type = str(config.get("entity_type") or "handoff")
+        elif isinstance(event, CaseOutboxORM):
             entity_type = "case"
             entity_id = event.case_id
         else:
             entity_type = "evidence"
-            entity_id = getattr(
-                event, "evidence_id", event.case_id
-            )  # Evidence outbox has evidence_id
-
-        # The config is typically the payload from the outbox
-        config = event.payload
-
+            entity_id = event.evidence_id
         return AsyncTaskPayload(
             task_type=task_name,
             task_version=1,
@@ -137,54 +291,23 @@ class UnifiedOutboxDispatcher:
             config=config,
         )
 
-    def _route_task(self, task_name: str) -> str:
-        """Determine Celery queue for task."""
-        if "processing." in task_name:
+    @staticmethod
+    def _route_task(task_name: str) -> str:
+        if ".processing." in task_name:
             return "careintel_processing"
-        elif "ai." in task_name:
+        if ".ai." in task_name:
             return "careintel_ai"
-        elif "retrieval." in task_name:
+        if ".retrieval." in task_name:
             return "careintel_retrieval"
-        else:
-            return "careintel_workflow"
+        return "careintel_workflow"
 
     async def poll_forever(self, interval_seconds: float = 2.0) -> None:
-        """Run the polling loop indefinitely."""
-        logger.info("Outbox Dispatcher starting polling loop.")
-
-        loops_since_sweep = 0
-
+        logger.info("Outbox dispatcher started")
         while True:
             try:
-                # Use a fresh session for each iteration
-                async with self.session_factory() as session:
-                    case_processed = await self._process_batch(session, CaseOutboxORM)
-                    evidence_processed = await self._process_batch(session, EvidenceOutboxORM)
-
-                    if case_processed > 0 or evidence_processed > 0:
-                        logger.debug(
-                            "Dispatched %s case events, %s evidence events.",
-                            case_processed,
-                            evidence_processed,
-                        )
-
-                # Periodically trigger stale sweep (e.g. every 60 seconds)
-                loops_since_sweep += 1
-                if loops_since_sweep * interval_seconds >= 60:
-                    celery_app.send_task(
-                        "careintel.tasks.workflow.recover_stale_tasks",
-                        kwargs={"threshold_seconds": 120},
-                        queue="careintel_workflow",
-                    )
-                    loops_since_sweep = 0
-
+                await self.dispatch_once()
             except Exception as exc:
-                logger.error(
-                    "Outbox polling error",
-                    extra={"error_type": type(exc).__name__},
-                )
-                # Sleep a bit longer on error
-                await asyncio.sleep(interval_seconds * 2)
-                continue
-
-            await asyncio.sleep(interval_seconds)
+                logger.error("Outbox polling error", extra={"error_type": type(exc).__name__})
+                await asyncio.sleep(min(interval_seconds * 2, 30))
+            else:
+                await asyncio.sleep(interval_seconds)

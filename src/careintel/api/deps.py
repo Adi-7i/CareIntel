@@ -32,8 +32,12 @@ from careintel.application.auth.permission_service import PermissionService
 from careintel.application.auth.token_service import JWTService
 from careintel.application.case.case_service import CaseService
 from careintel.application.case.encounter_service import EncounterService
+from careintel.application.escalation.escalation_service import EscalationService
 from careintel.application.evidence.evidence_service import EvidenceService
 from careintel.application.evidence.file_validator import FileValidator
+from careintel.application.handoff.handoff_service import HandoffService
+from careintel.application.handoff.recipient_service import RecipientService
+from careintel.application.handoff.referral_service import ReferralPackageService
 from careintel.application.processing.access import ProcessingAccessGuard
 from careintel.application.processing.document_processor import DocumentProcessor
 from careintel.application.processing.extraction_processor import ExtractionProcessor
@@ -41,6 +45,10 @@ from careintel.application.processing.language_processor import LanguageProcesso
 from careintel.application.processing.processing_service import ProcessingService
 from careintel.application.processing.speech_processor import SpeechProcessor
 from careintel.application.retrieval.retrieval_service import RetrievalService
+from careintel.application.review.decision_service import ReviewDecisionService
+from careintel.application.review.draft_service import DraftReviewService
+from careintel.application.review.review_service import ReviewService
+from careintel.application.review.workspace_service import WorkspaceService
 from careintel.core.config import Settings, get_settings
 from careintel.core.database import get_async_session
 from careintel.domain.auth.models import UserContext
@@ -63,9 +71,11 @@ from careintel.persistence.repositories.encounter_repo import EncounterRepositor
 from careintel.persistence.repositories.evidence_history_repo import EvidenceHistoryRepository
 from careintel.persistence.repositories.evidence_outbox_repo import EvidenceOutboxRepository
 from careintel.persistence.repositories.evidence_repo import EvidenceRepository
+from careintel.persistence.repositories.handoff_repo import HandoffRepository
 from careintel.persistence.repositories.knowledge_repo import KnowledgeRepository
 from careintel.persistence.repositories.processing_repo import ProcessingRepository
 from careintel.persistence.repositories.retrieval_repo import RetrievalRepository
+from careintel.persistence.repositories.review_repo import ReviewRepository
 from careintel.persistence.repositories.session_repo import SessionRepository
 from careintel.persistence.repositories.structuring_repo import StructuringRepository
 from careintel.persistence.repositories.text_content_repo import TextContentRepository
@@ -422,3 +432,115 @@ def get_ai_workflow_service(
         ),
         settings=settings,
     )
+
+
+# ── Human Review, Escalation, Referral, and Handoff ──────────────────────────
+
+
+def get_review_service(
+    session: DbSessionDep,
+    consent_service: Annotated[ConsentService, Depends(get_consent_service)],
+) -> ReviewService:
+    return ReviewService(
+        ReviewRepository(session),
+        CaseRepository(session),
+        EncounterRepository(session),
+        UserRepository(session),
+        consent_service,
+        AuditRepository(session),
+    )
+
+
+def get_draft_review_service(
+    session: DbSessionDep,
+    consent_service: Annotated[ConsentService, Depends(get_consent_service)],
+) -> DraftReviewService:
+    return DraftReviewService(
+        AIRepository(session),
+        ReviewRepository(session),
+        CaseRepository(session),
+        consent_service,
+        AuditRepository(session),
+    )
+
+
+def get_review_decision_service(
+    session: DbSessionDep,
+    consent_service: Annotated[ConsentService, Depends(get_consent_service)],
+) -> ReviewDecisionService:
+    return ReviewDecisionService(
+        ReviewRepository(session),
+        CaseRepository(session),
+        AIRepository(session),
+        CaseHistoryRepository(session),
+        CaseOutboxRepository(session),
+        consent_service,
+        AuditRepository(session),
+    )
+
+
+def get_workspace_service(
+    session: DbSessionDep,
+    consent_service: Annotated[ConsentService, Depends(get_consent_service)],
+) -> WorkspaceService:
+    return WorkspaceService(
+        CaseRepository(session),
+        ReviewRepository(session),
+        EncounterRepository(session),
+        EvidenceRepository(session),
+        TextContentRepository(session),
+        ProcessingRepository(session),
+        StructuringRepository(session),
+        RetrievalRepository(session),
+        AIRepository(session),
+        HandoffRepository(session),
+        consent_service,
+        AuditRepository(session),
+    )
+
+
+def get_escalation_service(
+    session: DbSessionDep,
+    consent_service: Annotated[ConsentService, Depends(get_consent_service)],
+) -> EscalationService:
+    return EscalationService(
+        ReviewRepository(session),
+        CaseRepository(session),
+        CaseHistoryRepository(session),
+        CaseOutboxRepository(session),
+        consent_service,
+        AuditRepository(session),
+    )
+
+
+def get_referral_service(
+    session: DbSessionDep,
+    consent_service: Annotated[ConsentService, Depends(get_consent_service)],
+) -> ReferralPackageService:
+    return ReferralPackageService(
+        HandoffRepository(session),
+        CaseRepository(session),
+        EvidenceRepository(session),
+        ReviewRepository(session),
+        AIRepository(session),
+        consent_service,
+        AuditRepository(session),
+    )
+
+
+def get_handoff_service(
+    session: DbSessionDep,
+    consent_service: Annotated[ConsentService, Depends(get_consent_service)],
+) -> HandoffService:
+    return HandoffService(
+        HandoffRepository(session),
+        CaseRepository(session),
+        CaseHistoryRepository(session),
+        CaseOutboxRepository(session),
+        consent_service,
+        AuditRepository(session),
+    )
+
+
+def get_recipient_service(session: DbSessionDep) -> RecipientService:
+    return RecipientService(HandoffRepository(session))

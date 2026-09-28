@@ -50,6 +50,7 @@ def create_celery_app() -> Celery:
             "careintel.workers.ai_tasks",
             "careintel.workers.retrieval_tasks",
             "careintel.workers.workflow_tasks",
+            "careintel.workers.handoff_tasks",
         ],
     )
 

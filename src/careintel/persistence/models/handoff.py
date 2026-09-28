@@ -98,6 +98,7 @@ class HandoffORM(Base):
         ForeignKey("recipients.id"),
         nullable=False,
     )
+    channel: Mapped[str | None] = mapped_column(String, nullable=True)
     status: Mapped[str] = mapped_column(String, nullable=False)
     idempotency_key: Mapped[str] = mapped_column(String, nullable=False, unique=True)
     sent_by: Mapped[uuid.UUID] = mapped_column(

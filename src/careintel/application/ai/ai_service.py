@@ -13,7 +13,6 @@ CRITICAL INVARIANTS:
 
 from __future__ import annotations
 
-import datetime
 import hashlib
 import json
 import time
@@ -26,7 +25,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from careintel.application.ai.output_validation import validate_advisory_output
 from careintel.application.ai.policy_service import PolicyService
 from careintel.core.correlation import get_correlation_id
-from careintel.core.errors import NotFoundError, ValidationError
 from careintel.domain.ai.models import (
     AIDraft,
     AITaskConfig,
@@ -316,65 +314,6 @@ class AIService:
         updated_draft = await self._repo.get_draft(draft_orm.id)
         assert updated_draft is not None
         return self._to_draft_domain(updated_draft)
-
-    async def approve_draft(self, actor: UserContext, draft_id: uuid.UUID) -> None:
-        """Approve an AI draft for use in case state transitions."""
-        from careintel.application.auth.permission_service import PermissionService
-
-        PermissionService.check(actor, Permission.AI_WRITE)
-
-        draft = await self._repo.get_draft(draft_id)
-        if not draft:
-            raise NotFoundError("Draft not found")
-
-        if draft.reviewer_status == DraftReviewerStatus.REJECTED.value:
-            raise ValidationError("Cannot approve a rejected draft.")
-
-        await self._repo.update_draft(
-            draft_id,
-            {
-                "reviewer_status": DraftReviewerStatus.APPROVED.value,
-                "reviewer_id": actor.id,
-                "reviewed_at": datetime.datetime.now(datetime.UTC).replace(tzinfo=None),
-            },
-        )
-        await self._session.commit()
-        await self._audit_event(
-            event_type=AuditEventType.AI_DRAFT_REVIEWED,
-            actor_id=actor.id,
-            target_id=draft_id,
-            target_type="ai_draft",
-            outcome="success",
-            detail={"decision": "APPROVED"},
-        )
-
-    async def reject_draft(self, actor: UserContext, draft_id: uuid.UUID) -> None:
-        """Reject an AI draft."""
-        from careintel.application.auth.permission_service import PermissionService
-
-        PermissionService.check(actor, Permission.AI_WRITE)
-
-        draft = await self._repo.get_draft(draft_id)
-        if not draft:
-            raise NotFoundError("Draft not found")
-
-        await self._repo.update_draft(
-            draft_id,
-            {
-                "reviewer_status": DraftReviewerStatus.REJECTED.value,
-                "reviewer_id": actor.id,
-                "reviewed_at": datetime.datetime.now(datetime.UTC).replace(tzinfo=None),
-            },
-        )
-        await self._session.commit()
-        await self._audit_event(
-            event_type=AuditEventType.AI_DRAFT_REJECTED,
-            actor_id=actor.id,
-            target_id=draft_id,
-            target_type="ai_draft",
-            outcome="success",
-            detail={"decision": "REJECTED"},
-        )
 
     @staticmethod
     def _to_draft_domain(orm: Any) -> AIDraft:

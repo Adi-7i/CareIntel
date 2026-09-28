@@ -127,6 +127,9 @@ class AIDraftORM(Base):
         nullable=True,
     )
     reviewed_at: Mapped[datetime.datetime | None] = mapped_column(nullable=True)
+    version: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=1, server_default=text("1")
+    )
     created_at: Mapped[datetime.datetime] = mapped_column(
         server_default=text("now()"), nullable=False
     )

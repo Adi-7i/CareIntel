@@ -54,6 +54,14 @@ class RetrievalRepository:
         )
         return result.scalar_one_or_none()
 
+    async def list_runs_for_case(self, case_id: uuid.UUID) -> list[RetrievalRunORM]:
+        result = await self._session.execute(
+            select(RetrievalRunORM)
+            .where(RetrievalRunORM.case_id == case_id)
+            .order_by(RetrievalRunORM.created_at.desc())
+        )
+        return list(result.scalars().all())
+
     async def create_run(self, data: dict[str, Any]) -> RetrievalRunORM:
         orm = RetrievalRunORM(**data)
         self._session.add(orm)

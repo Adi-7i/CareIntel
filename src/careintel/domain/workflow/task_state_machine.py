@@ -21,6 +21,7 @@ class TaskStateMachine:
         AsyncTaskStatus.PENDING: frozenset(
             {
                 AsyncTaskStatus.QUEUED,
+                AsyncTaskStatus.RUNNING,
                 AsyncTaskStatus.CANCELLED,
             }
         ),

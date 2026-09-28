@@ -36,6 +36,12 @@ class CaseRepository:
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
+    async def lock_by_id(self, case_id: uuid.UUID) -> CaseORM | None:
+        result = await self.session.execute(
+            select(CaseORM).where(CaseORM.id == case_id).with_for_update()
+        )
+        return result.scalar_one_or_none()
+
     async def update_state(self, case_id: uuid.UUID, new_state: str, new_version: int) -> bool:
         """
         Update state and version using optimistic concurrency control.
