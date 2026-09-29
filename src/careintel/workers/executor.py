@@ -68,6 +68,9 @@ async def _append_task_audit(
             target_id=task.id,
             target_type="async_task",
             correlation_id=task.correlation_id,
+            request_id=task.celery_task_id,
+            causation_id=task.causation_id,
+            source="worker",
             outcome=outcome,
             detail=detail,
         )
@@ -102,7 +105,12 @@ async def execute_durable_task(
     try:
         async with session_factory() as work_session:
             actor = await load_worker_actor(work_session, task.actor_id)
-            with setup_worker_context(task.correlation_id, str(task.actor_id)):
+            with setup_worker_context(
+                task.correlation_id,
+                str(task.actor_id),
+                request_id=celery_task_id,
+                causation_id=task.causation_id,
+            ):
                 result = await handler(work_session, task, actor)
             await work_session.commit()
     except Exception as exc:

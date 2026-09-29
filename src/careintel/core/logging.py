@@ -19,7 +19,8 @@ from __future__ import annotations
 
 import logging
 import sys
-from typing import TYPE_CHECKING
+from collections.abc import Mapping
+from typing import TYPE_CHECKING, Any
 
 from pythonjsonlogger.json import JsonFormatter
 
@@ -59,6 +60,24 @@ _SENSITIVE_KEYS: frozenset[str] = frozenset(
 _REDACTED = "[REDACTED]"
 
 
+def redact_sensitive_data(value: Any) -> Any:
+    """Recursively redact sensitive keyed values without inspecting free text."""
+    if isinstance(value, Mapping):
+        return {
+            str(key): (
+                _REDACTED
+                if str(key).casefold() in _SENSITIVE_KEYS
+                else redact_sensitive_data(nested)
+            )
+            for key, nested in value.items()
+        }
+    if isinstance(value, list):
+        return [redact_sensitive_data(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(redact_sensitive_data(item) for item in value)
+    return value
+
+
 class SensitiveDataFilter(logging.Filter):
     """
     Logging filter that redacts sensitive values from LogRecord extra fields.
@@ -71,6 +90,8 @@ class SensitiveDataFilter(logging.Filter):
         for key in list(record.__dict__.keys()):
             if key.lower() in _SENSITIVE_KEYS:
                 setattr(record, key, _REDACTED)
+            else:
+                setattr(record, key, redact_sensitive_data(getattr(record, key)))
         return True
 
 

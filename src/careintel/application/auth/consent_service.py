@@ -63,6 +63,7 @@ class ConsentService:
     ) -> ConsentContext:
         """Record a request for consent (e.g. presented to the user)."""
         consent = ConsentORM(
+            id=uuid.uuid4(),
             subject_id=subject_id,
             purpose=purpose,
             notice_version=notice_version,

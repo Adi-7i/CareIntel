@@ -51,6 +51,7 @@ from careintel.application.review.review_service import ReviewService
 from careintel.application.review.workspace_service import WorkspaceService
 from careintel.core.config import Settings, get_settings
 from careintel.core.database import get_async_session
+from careintel.core.logging import get_logger
 from careintel.domain.auth.models import UserContext
 from careintel.domain.auth.permissions import Permission
 from careintel.infrastructure.ai.port import LLMProvider
@@ -83,6 +84,7 @@ from careintel.persistence.repositories.user_repo import UserRepository
 
 # Using FastAPI's built-in HTTPBearer for token extraction (swagger integration)
 token_bearer = HTTPBearer(auto_error=False)
+logger = get_logger(__name__)
 
 # ── Settings ──────────────────────────────────────────────────────────────────
 
@@ -148,8 +150,12 @@ async def get_optional_user(
         return None
     try:
         return await auth_service.get_current_user(token_cred.credentials)
-    except Exception:
+    except Exception as exc:
         # If optional, we ignore auth errors
+        logger.warning(
+            "Optional authentication rejected",
+            extra={"error_type": type(exc).__name__},
+        )
         return None
 
 

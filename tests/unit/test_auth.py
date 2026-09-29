@@ -5,6 +5,8 @@ Auth and security unit tests.
 from __future__ import annotations
 
 import uuid
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -14,6 +16,64 @@ from careintel.core.config import get_settings
 from careintel.domain.auth.models import UserContext
 from careintel.domain.auth.permissions import Permission
 from careintel.domain.auth.policy import AuthorizationPolicy
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_failed_login_uses_durable_security_audit_path() -> None:
+    from careintel.application.auth.auth_service import AuthService
+    from careintel.core.errors import AuthError
+
+    user_repo = AsyncMock()
+    user_repo.get_by_email.return_value = SimpleNamespace(
+        id=uuid.uuid4(),
+        password_hash="synthetic-hash",
+        is_active=True,
+    )
+    audit_repo = AsyncMock()
+    hasher = MagicMock()
+    hasher.verify.return_value = False
+    service = AuthService(
+        user_repo=user_repo,
+        session_repo=AsyncMock(),
+        audit_repo=audit_repo,
+        token_service=MagicMock(),
+        hasher=hasher,
+    )
+
+    with pytest.raises(AuthError, match="Invalid email or password"):
+        await service.login("synthetic@example.invalid", "not-a-real-password", "correlation")
+
+    audit_repo.append_security_event.assert_awaited_once()
+    audit_repo.append.assert_not_awaited()
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_consent_request_assigns_identity_before_initial_event() -> None:
+    from careintel.application.auth.consent_service import ConsentService
+
+    consent_repo = AsyncMock()
+    audit_repo = AsyncMock()
+    captured: dict[str, object] = {}
+
+    async def create(consent: object, event: object) -> object:
+        captured["consent"] = consent
+        captured["event"] = event
+        return consent
+
+    consent_repo.create.side_effect = create
+    service = ConsentService(consent_repo, audit_repo)
+
+    result = await service.request_consent(
+        uuid.uuid4(),
+        "data_processing",
+        "1.0",
+        "synthetic-correlation",
+    )
+
+    assert result.id is not None
+    assert captured["event"].consent_id == result.id  # type: ignore[attr-defined]
 
 
 @pytest.mark.unit

@@ -45,7 +45,7 @@ class AuthService:
         user = await self.user_repo.get_by_email(email)
 
         if not user or not self.hasher.verify(password, user.password_hash):
-            await self.audit_repo.append(
+            await self.audit_repo.append_security_event(
                 AuditLogORM(
                     event_type=AuditEventType.LOGIN_FAILURE,
                     actor_id=user.id if user else None,
@@ -56,7 +56,7 @@ class AuthService:
             raise AuthError("Invalid email or password.")
 
         if not user.is_active:
-            await self.audit_repo.append(
+            await self.audit_repo.append_security_event(
                 AuditLogORM(
                     event_type=AuditEventType.LOGIN_FAILURE,
                     actor_id=user.id,

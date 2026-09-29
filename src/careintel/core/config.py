@@ -94,6 +94,14 @@ class Settings(BaseSettings):
         default=30,
         description="Seconds to wait for a connection from the pool.",
     )
+    dependency_connect_timeout_seconds: Annotated[float, Field(ge=0.1, le=60)] = Field(
+        default=10.0,
+        description="Maximum seconds allowed for one external dependency connection.",
+    )
+    readiness_timeout_seconds: Annotated[float, Field(ge=0.1, le=30)] = Field(
+        default=5.0,
+        description="Maximum seconds allowed for each readiness dependency probe.",
+    )
     database_echo_sql: bool = Field(
         default=False,
         description="Echo all SQL to stdout. Never enable in production.",

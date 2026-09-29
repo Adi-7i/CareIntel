@@ -2,10 +2,27 @@
 
 from __future__ import annotations
 
+import asyncio
+import time
 from unittest.mock import AsyncMock, patch
 
 import pytest
 from httpx import AsyncClient
+
+
+@pytest.fixture(autouse=True)
+def _isolate_redis_probe(monkeypatch: pytest.MonkeyPatch) -> None:
+    class HealthyRedis:
+        async def ping(self) -> bool:
+            return True
+
+        async def aclose(self) -> None:
+            return None
+
+    monkeypatch.setattr(
+        "careintel.api.v1.health.service.redis.Redis.from_url",
+        lambda *_args, **_kwargs: HealthyRedis(),
+    )
 
 
 @pytest.mark.api
@@ -36,6 +53,18 @@ class TestLivenessEndpoint:
             headers={"X-Correlation-ID": supplied_id},
         )
         assert response.headers.get("x-correlation-id") == supplied_id
+
+    async def test_trace_headers_are_bounded_and_request_id_is_distinct(
+        self, client: AsyncClient
+    ) -> None:
+        response = await client.get(
+            "/api/v1/health/live",
+            headers={"X-Correlation-ID": "x" * 129, "X-Request-ID": "request-123"},
+        )
+
+        assert response.status_code == 200
+        assert response.headers["x-correlation-id"] != "x" * 129
+        assert response.headers["x-request-id"] == "request-123"
 
 
 @pytest.mark.api
@@ -89,3 +118,34 @@ class TestReadinessEndpoint:
         ):
             response = await client.get("/api/v1/health/ready")
         assert "x-correlation-id" in response.headers
+
+    async def test_readiness_times_out_hanging_dependencies(
+        self,
+        client: AsyncClient,
+        app: object,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        async def hang() -> bool:
+            await asyncio.Event().wait()
+            return True
+
+        class HangingBlob:
+            async def exists(self, _key: str) -> bool:
+                return await hang()
+
+        monkeypatch.setenv("READINESS_TIMEOUT_SECONDS", "0.1")
+        from careintel.core.config import get_settings
+
+        get_settings.cache_clear()
+        app.state.blob_provider = HangingBlob()  # type: ignore[attr-defined]
+        started = time.perf_counter()
+        with patch(
+            "careintel.api.v1.health.service.check_database_liveness",
+            new=lambda _engine: hang(),
+        ):
+            response = await client.get("/api/v1/health/ready")
+
+        assert response.status_code == 503
+        assert time.perf_counter() - started < 0.5
+        assert response.json()["checks"]["database"] == "unavailable"
+        assert response.json()["checks"]["blob_storage"] == "unavailable"

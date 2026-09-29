@@ -76,7 +76,15 @@ class ProvenanceIntegrityRule:
         invalid_citations = []
         unsupported_claim_indexes = []
         for index, claim in enumerate(draft.claim_provenance):
-            if claim.status == "SUPPORTED" and not claim.supporting_source_ids:
+            if (
+                claim.status
+                in {
+                    "SUPPORTED",
+                    "PARTIALLY_SUPPORTED",
+                    "CONFLICTING_EVIDENCE",
+                }
+                and not claim.supporting_source_ids
+            ):
                 unsupported_claim_indexes.append(index)
             for sid in claim.supporting_source_ids:
                 if sid not in valid_ids:
@@ -153,7 +161,13 @@ class RequiredEvidenceRule:
         missing = [
             index
             for index, claim in enumerate(draft.claim_provenance)
-            if claim.status == "SUPPORTED" and not claim.supporting_source_ids
+            if claim.status
+            in {
+                "SUPPORTED",
+                "PARTIALLY_SUPPORTED",
+                "CONFLICTING_EVIDENCE",
+            }
+            and not claim.supporting_source_ids
         ]
         return PolicyDecision(
             check_type=self.check_type,
@@ -174,7 +188,9 @@ class ProhibitedContentRule:
     }
     _PATTERN = re.compile(
         r"\b(?:diagnosis\s+is|diagnos(?:e|ed)\s+with|prescrib(?:e|ed|ing)|"
-        r"dosage\s+should|treatment\s+plan\s+is)\b",
+        r"dosage\s+should|treatment\s+plan\s+is|i\s+diagnose|"
+        r"(?:you|the\s+patient)\s+(?:must|should)\s+"
+        r"(?:take|start|stop|increase|decrease)\b)",
         re.IGNORECASE,
     )
 
@@ -248,6 +264,59 @@ class ReviewerOnlyActionRule:
         )
 
 
+class OutputSafetyRule:
+    """Block model output that repeats attacks, claims authority, or leaks instructions."""
+
+    _PATTERNS: ClassVar[dict[str, re.Pattern[str]]] = {
+        "instruction_override": re.compile(
+            r"\b(?:ignore|disregard|override)\s+(?:all\s+)?(?:previous|system|policy)\s+"
+            r"(?:instructions?|constraints?|rules?)\b",
+            re.IGNORECASE,
+        ),
+        "system_prompt_disclosure": re.compile(
+            r"\b(?:system\s+(?:prompt|instructions?)\s+(?:is|are|says)|"
+            r"reveal(?:ed)?\s+(?:the\s+)?system\s+prompt)\b",
+            re.IGNORECASE,
+        ),
+        "tool_execution": re.compile(
+            r"\b(?:execute|invoke|call|run)\s+(?:an?\s+)?(?:tool|function|command)\b",
+            re.IGNORECASE,
+        ),
+        "human_boundary_bypass": re.compile(
+            r"\b(?:no\s+human\s+review\s+(?:is\s+)?required|bypass\s+(?:human\s+)?approval|"
+            r"final\s+clinical\s+(?:decision|disposition)\s+is)\b",
+            re.IGNORECASE,
+        ),
+        "unsupported_certainty": re.compile(
+            r"\b(?:definitely|certainly|without\s+(?:any\s+)?doubt|guaranteed)\b",
+            re.IGNORECASE,
+        ),
+    }
+
+    @property
+    def check_type(self) -> PolicyCheckType:
+        return PolicyCheckType.OUTPUT_SAFETY
+
+    @property
+    def version(self) -> str:
+        return "1.0"
+
+    def evaluate(self, draft: AIDraft, context: SafeContext) -> PolicyDecision:
+        del context
+        _, strings = _keys_and_strings(draft.content)
+        categories = sorted(
+            category
+            for category, pattern in self._PATTERNS.items()
+            if any(pattern.search(value) for value in strings)
+        )
+        return PolicyDecision(
+            check_type=self.check_type,
+            policy_version=self.version,
+            outcome=PolicyOutcome.FAIL if categories else PolicyOutcome.PASS,
+            detail={"categories": categories} if categories else {},
+        )
+
+
 class PolicyService:
     """
     Executes safety policies against an AI draft.
@@ -262,6 +331,7 @@ class PolicyService:
                 ProvenanceIntegrityRule(),
                 ProhibitedContentRule(),
                 ReviewerOnlyActionRule(),
+                OutputSafetyRule(),
             ]
         else:
             self._rules = rules

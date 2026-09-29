@@ -66,6 +66,12 @@ class ReviewQueueItemORM(Base):
 
     __table_args__ = (
         Index("ix_review_queue_status_priority", "status", "priority_bucket", "entered_queue_at"),
+        Index(
+            "ix_review_queue_assignee_status",
+            "assigned_reviewer_id",
+            "status",
+            "entered_queue_at",
+        ),
         # Partial index for unassigned items
         Index(
             "ix_review_queue_unassigned",

@@ -8,7 +8,7 @@ import datetime
 import uuid
 from typing import Any
 
-from sqlalchemy import DateTime, Index, String, text
+from sqlalchemy import DateTime, Index, String, event, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -39,6 +39,14 @@ class AuditLogORM(Base):
     )
     target_type: Mapped[str | None] = mapped_column(String, nullable=True)
     correlation_id: Mapped[str] = mapped_column(String, nullable=False)
+    request_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    causation_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    source: Mapped[str] = mapped_column(
+        String,
+        nullable=False,
+        default="application",
+        server_default=text("'application'"),
+    )
     outcome: Mapped[str] = mapped_column(String, nullable=False)
     detail: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
 
@@ -46,4 +54,23 @@ class AuditLogORM(Base):
         Index("ix_audit_logs_actor_occurred", "actor_id", "occurred_at"),
         Index("ix_audit_logs_event_occurred", "event_type", "occurred_at"),
         Index("ix_audit_logs_correlation", "correlation_id"),
+        Index("ix_audit_logs_request", "request_id"),
+        Index("ix_audit_logs_target_occurred", "target_type", "target_id", "occurred_at"),
     )
+
+
+@event.listens_for(AuditLogORM, "before_insert")
+def _prepare_audit_record(_mapper: object, _connection: object, target: AuditLogORM) -> None:
+    """Attach trace metadata and redact structured secrets before persistence."""
+    from careintel.core.correlation import (
+        get_causation_id,
+        get_request_id,
+        get_trace_source,
+    )
+    from careintel.core.logging import redact_sensitive_data
+
+    target.request_id = target.request_id or get_request_id() or None
+    target.causation_id = target.causation_id or get_causation_id() or None
+    target.source = target.source or get_trace_source()
+    if target.detail is not None:
+        target.detail = redact_sensitive_data(target.detail)

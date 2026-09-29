@@ -95,12 +95,25 @@ def validate_advisory_output(
                     detail=f"claims.{index} cites a source outside the case context.",
                 )
             )
-        if claim.status == "SUPPORTED" and not source_ids:
+        source_required_statuses = {
+            "SUPPORTED",
+            "PARTIALLY_SUPPORTED",
+            "CONFLICTING_EVIDENCE",
+        }
+        if claim.status in source_required_statuses and not source_ids:
             errors.append(
                 ValidationError(
                     step="provenance",
-                    code="SUPPORTED_WITHOUT_SOURCE",
-                    detail=f"claims.{index} is marked supported without a source.",
+                    code="EVIDENCE_STATUS_WITHOUT_SOURCE",
+                    detail=f"claims.{index} requires source evidence for its status.",
+                )
+            )
+        if claim.status == "CONFLICTING_EVIDENCE" and len(source_ids) < 2:
+            errors.append(
+                ValidationError(
+                    step="provenance",
+                    code="CONFLICT_WITHOUT_DISTINCT_SOURCES",
+                    detail=f"claims.{index} requires at least two sources for a conflict.",
                 )
             )
         if claim.status in {"UNSUPPORTED", "MISSING_EVIDENCE"} and source_ids:

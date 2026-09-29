@@ -57,10 +57,11 @@ def build_engine(settings: Settings) -> AsyncEngine:
         # Connection args: statement_timeout guards against runaway queries.
         # Values are intentionally conservative; tune per-query in application layer.
         connect_args={
+            "timeout": settings.dependency_connect_timeout_seconds,
             "server_settings": {
                 "application_name": "careintel",
                 "statement_timeout": "30000",  # 30 seconds max per statement
-            }
+            },
         },
     )
 
@@ -110,9 +111,12 @@ async def get_async_session(
     try:
         yield session
         await session.commit()
-    except SQLAlchemyError:
+    except SQLAlchemyError as exc:
         await session.rollback()
-        logger.exception("Database session error — rolling back transaction")
+        logger.error(
+            "Database session error — rolling back transaction",
+            extra={"error_type": type(exc).__name__},
+        )
         raise
     except Exception:
         await session.rollback()
@@ -134,8 +138,11 @@ async def check_database_liveness(engine: AsyncEngine) -> bool:
         async with engine.connect() as conn:
             await conn.execute(text("SELECT 1"))
         return True
-    except Exception:
-        logger.warning("Database liveness probe failed", exc_info=True)
+    except Exception as exc:
+        logger.warning(
+            "Database liveness probe failed",
+            extra={"error_type": type(exc).__name__},
+        )
         return False
 
 

@@ -8,7 +8,12 @@ from contextlib import contextmanager
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from careintel.core.correlation import _correlation_id_var
+from careintel.core.correlation import (
+    _causation_id_var,
+    _correlation_id_var,
+    _request_id_var,
+    _trace_source_var,
+)
 from careintel.domain.auth.models import UserContext
 from careintel.persistence.repositories.user_repo import UserRepository
 
@@ -18,12 +23,21 @@ SYSTEM_WORKER_ACTOR_ID = uuid.UUID("00000000-0000-0000-0000-000000000001")
 
 
 @contextmanager
-def setup_worker_context(correlation_id: str, actor_id: str) -> Generator[UserContext, None, None]:
+def setup_worker_context(
+    correlation_id: str,
+    actor_id: str,
+    *,
+    request_id: str | None = None,
+    causation_id: str | None = None,
+) -> Generator[UserContext, None, None]:
     """
     Set up the correlation ID and actor context for the worker.
     Yields a UserContext representing the system worker.
     """
     token = _correlation_id_var.set(correlation_id)
+    request_token = _request_id_var.set(request_id or "")
+    causation_token = _causation_id_var.set(causation_id or "")
+    source_token = _trace_source_var.set("worker")
     try:
         # Workers execute as a special SYSTEM_WORKER actor, but we may want
         # to record the original human actor_id in the audit logs.
@@ -38,6 +52,9 @@ def setup_worker_context(correlation_id: str, actor_id: str) -> Generator[UserCo
         yield worker_context
     finally:
         _correlation_id_var.reset(token)
+        _request_id_var.reset(request_token)
+        _causation_id_var.reset(causation_token)
+        _trace_source_var.reset(source_token)
 
 
 async def load_worker_actor(session: AsyncSession, actor_id: uuid.UUID) -> UserContext:

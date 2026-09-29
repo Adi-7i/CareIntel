@@ -12,6 +12,7 @@ No business logic, SQL, validation logic, or provider calls belong here.
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
@@ -69,7 +70,23 @@ def create_app() -> FastAPI:
                 connection_string=settings.azure_storage_connection_string.get_secret_value(),
                 container_name=settings.azure_storage_container,
             )
-            await provider.ensure_container()
+            try:
+                await asyncio.wait_for(
+                    provider.ensure_container(),
+                    timeout=settings.dependency_connect_timeout_seconds,
+                )
+            except TimeoutError as exc:
+                await provider.close()
+                logger.error(
+                    "Blob storage startup check timed out",
+                    extra={"dependency": "blob_storage"},
+                )
+                from careintel.core.errors import StorageError
+
+                raise StorageError("Container verification timed out") from exc
+            except Exception:
+                await provider.close()
+                raise
             _app.state.blob_provider = provider
         else:
             _app.state.blob_provider = FakeBlobProvider()
@@ -182,7 +199,16 @@ def create_app() -> FastAPI:
         finally:
             # ── Shutdown ─────────────────────────────────────────────────────
             logger.info("CareIntel shutting down — disposing resources")
-            await _app.state.blob_provider.close()
+            try:
+                await asyncio.wait_for(
+                    _app.state.blob_provider.close(),
+                    timeout=settings.dependency_connect_timeout_seconds,
+                )
+            except TimeoutError:
+                logger.warning(
+                    "Blob storage shutdown timed out",
+                    extra={"dependency": "blob_storage"},
+                )
             await dispose_engine(engine)
             logger.info("CareIntel shutdown complete")
 

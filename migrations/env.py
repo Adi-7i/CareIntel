@@ -79,6 +79,7 @@ def do_run_migrations(connection: Connection) -> None:
     # Supabase installs extensions in the 'extensions' schema.
     # Setting search_path ensures the vector type is resolvable from public schema.
     from sqlalchemy import text
+
     connection.execute(text("SET search_path TO public, extensions"))
     context.configure(
         connection=connection,
@@ -97,10 +98,18 @@ async def run_async_migrations() -> None:
     NullPool is used so each migration run gets a fresh connection
     and connections are not held in a pool between runs.
     """
-    url = get_database_url()
+    settings = get_settings()
+    url = settings.database_url.get_secret_value()
     connectable = create_async_engine(
         url,
         poolclass=pool.NullPool,
+        connect_args={
+            "timeout": settings.dependency_connect_timeout_seconds,
+            "server_settings": {
+                "application_name": "careintel-alembic",
+                "statement_timeout": "30000",
+            },
+        },
     )
 
     async with connectable.connect() as connection:

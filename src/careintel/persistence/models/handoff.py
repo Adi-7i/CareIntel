@@ -122,4 +122,7 @@ class HandoffORM(Base):
         server_default=text("now()"), nullable=False
     )
 
-    __table_args__ = (Index("ix_handoffs_case", "case_id"),)
+    __table_args__ = (
+        Index("ix_handoffs_case", "case_id"),
+        Index("ix_handoffs_status_updated", "status", "updated_at"),
+    )

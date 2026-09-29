@@ -56,7 +56,7 @@ class ReviewRepository:
     async def list_queue_items(
         self,
         status: str | None = None,
-        facility_id: uuid.UUID | None = None,
+        facility_ids: set[uuid.UUID] | None = None,
         assigned_to: uuid.UUID | None = None,
         limit: int = 50,
         offset: int = 0,
@@ -67,8 +67,11 @@ class ReviewRepository:
             stmt = stmt.where(ReviewQueueItemORM.status == status)
         if assigned_to:
             stmt = stmt.where(ReviewQueueItemORM.assigned_reviewer_id == assigned_to)
-        if facility_id is not None:
-            stmt = stmt.where(CaseORM.facility_id == facility_id)
+        if facility_ids is not None:
+            if facility_ids:
+                stmt = stmt.where(CaseORM.facility_id.in_(facility_ids))
+            else:
+                stmt = stmt.where(CaseORM.facility_id.is_(None))
 
         stmt = (
             stmt.order_by(

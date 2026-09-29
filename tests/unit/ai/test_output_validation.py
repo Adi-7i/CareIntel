@@ -101,3 +101,34 @@ def test_validation_rejects_workflow_field_at_schema_boundary() -> None:
     assert output is None
     assert result.status == ValidationStatus.REJECTED
     assert any(error.step == "schema" for error in result.errors)
+
+
+def test_validation_requires_provenance_for_partial_and_conflicting_claims() -> None:
+    context, source_id, _ = _context()
+    output, result = validate_advisory_output(
+        {
+            "summary": "Uncertainty remains explicit.",
+            "claims": [
+                {
+                    "text": "Partially supported statement.",
+                    "status": "PARTIALLY_SUPPORTED",
+                    "supporting_source_ids": [],
+                },
+                {
+                    "text": "Conflicting statement.",
+                    "status": "CONFLICTING_EVIDENCE",
+                    "supporting_source_ids": [str(source_id)],
+                },
+            ],
+            "missing_information_ids": [],
+            "limitations": ["Human review required."],
+        },
+        context,
+    )
+
+    assert output is not None
+    assert result.status == ValidationStatus.REJECTED
+    assert {error.code for error in result.errors} == {
+        "EVIDENCE_STATUS_WITHOUT_SOURCE",
+        "CONFLICT_WITHOUT_DISTINCT_SOURCES",
+    }

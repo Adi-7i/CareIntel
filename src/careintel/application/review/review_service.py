@@ -60,15 +60,29 @@ class ReviewService:
         offset: int = 0,
     ) -> list[ReviewQueueItemORM]:
         PermissionService.check(actor, Permission.REVIEW_READ)
-        items = await self.review_repo.list_queue_items(status, None, assigned_to, limit, offset)
-        visible: list[ReviewQueueItemORM] = []
-        for item in items:
-            case = await self.case_repo.get_by_id(item.case_id)
-            if case is not None and AuthorizationPolicy.evaluate(
-                actor, Permission.REVIEW_READ, facility_scope=case.facility_id
-            ):
-                visible.append(item)
-        return visible
+        global_access = any(
+            actor.role_facilities.get(role) is None
+            for role in actor.roles
+            if role in actor.role_facilities
+        )
+        facility_ids = (
+            None
+            if global_access
+            else {
+                facility_id
+                for role, facility_id in actor.role_facilities.items()
+                if role in actor.roles and facility_id is not None
+            }
+        )
+        return list(
+            await self.review_repo.list_queue_items(
+                status,
+                facility_ids,
+                assigned_to,
+                limit,
+                offset,
+            )
+        )
 
     async def enter_review_queue(
         self,

@@ -5,7 +5,7 @@ from __future__ import annotations
 import datetime
 import uuid
 from collections.abc import AsyncGenerator
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from sqlalchemy import func, select
@@ -15,8 +15,14 @@ from careintel.application.ai.ai_service import AIService
 from careintel.application.ai.ai_workflow_service import AIWorkflowService
 from careintel.application.ai.context_builder import AIContextBuilder
 from careintel.application.ai.policy_service import PolicyService
+from careintel.application.auth.auth_service import AuthService
 from careintel.application.auth.consent_service import ConsentService
+from careintel.application.auth.password_hasher import PasswordHasher
+from careintel.application.auth.token_service import JWTService
+from careintel.application.case.case_service import CaseService
 from careintel.application.case.encounter_service import EncounterService
+from careintel.application.handoff.handoff_service import HandoffService
+from careintel.application.handoff.referral_service import ReferralPackageService
 from careintel.application.knowledge.knowledge_service import KnowledgeService
 from careintel.application.processing.access import ProcessingAccessGuard
 from careintel.application.processing.document_processor import DocumentProcessor
@@ -25,16 +31,28 @@ from careintel.application.processing.language_processor import LanguageProcesso
 from careintel.application.processing.processing_service import ProcessingService
 from careintel.application.processing.speech_processor import SpeechProcessor
 from careintel.application.retrieval.retrieval_service import RetrievalService
+from careintel.application.review.decision_service import ReviewDecisionService
+from careintel.application.review.draft_service import DraftReviewService
+from careintel.application.review.review_service import ReviewService
 from careintel.application.structuring.structuring_service import StructuringService
+from careintel.application.workflow.outbox_dispatcher import UnifiedOutboxDispatcher
 from careintel.core.config import Settings
 from careintel.core.database import build_engine
+from careintel.core.errors import AuthorizationError, ConcurrencyError, InvalidTransitionError
 from careintel.domain.ai.status import DraftReviewerStatus, TaskType, ValidationStatus
 from careintel.domain.auth.models import UserContext
 from careintel.domain.auth.permissions import Permission
-from careintel.domain.case.commands import CreateEncounterCommand
+from careintel.domain.case.commands import (
+    CreateCaseCommand,
+    CreateEncounterCommand,
+    TransitionCaseCommand,
+)
+from careintel.domain.case.states import CaseState
+from careintel.domain.handoff.states import HandoffStatus
 from careintel.domain.processing.processing_commands import TriggerProcessingCommand
 from careintel.domain.processing.processing_status import ProcessingStatus
 from careintel.domain.processing.processor_type import ProcessorType
+from careintel.domain.review.states import ReviewDecisionType, ReviewQueueStatus
 from careintel.infrastructure.ai.demo_adapter import DemoLLMProvider
 from careintel.infrastructure.embedding.demo_provider import DemoEmbeddingProvider
 from careintel.infrastructure.extraction.demo_provider import DemoExtractionProvider
@@ -45,26 +63,36 @@ from careintel.infrastructure.storage.fake_provider import FakeBlobProvider
 from careintel.infrastructure.stt.demo_provider import DemoSpeechProvider
 from careintel.infrastructure.translation.demo_provider import DemoTranslationProvider
 from careintel.persistence.models.ai import AIDraftORM, AIRunORM, PolicyDecisionORM
-from careintel.persistence.models.case import CaseORM
-from careintel.persistence.models.consent import ConsentORM
+from careintel.persistence.models.audit import AuditLogORM
+from careintel.persistence.models.case import CaseORM, CaseOutboxORM, CaseStateHistoryORM
 from careintel.persistence.models.evidence import EvidenceORM, TextContentORM
+from careintel.persistence.models.handoff import HandoffORM, RecipientORM
 from careintel.persistence.models.processing import ExtractionRunORM, ProcessingRunORM
 from careintel.persistence.models.retrieval import RetrievalCandidateORM, RetrievalRunORM
+from careintel.persistence.models.review import ReviewDecisionORM, ReviewQueueItemORM
 from careintel.persistence.models.structuring import MissingInfoItemORM, TimelineEventORM
 from careintel.persistence.models.user import UserORM
+from careintel.persistence.models.workflow import AsyncTaskORM
 from careintel.persistence.repositories.ai_repo import AIRepository
 from careintel.persistence.repositories.audit_repo import AuditRepository
+from careintel.persistence.repositories.case_history_repo import CaseHistoryRepository
 from careintel.persistence.repositories.case_outbox_repo import CaseOutboxRepository
 from careintel.persistence.repositories.case_repo import CaseRepository
 from careintel.persistence.repositories.consent_repo import ConsentRepository
 from careintel.persistence.repositories.encounter_repo import EncounterRepository
 from careintel.persistence.repositories.evidence_outbox_repo import EvidenceOutboxRepository
 from careintel.persistence.repositories.evidence_repo import EvidenceRepository
+from careintel.persistence.repositories.handoff_repo import HandoffRepository
 from careintel.persistence.repositories.knowledge_repo import KnowledgeRepository
 from careintel.persistence.repositories.processing_repo import ProcessingRepository
 from careintel.persistence.repositories.retrieval_repo import RetrievalRepository
+from careintel.persistence.repositories.review_repo import ReviewRepository
+from careintel.persistence.repositories.session_repo import SessionRepository
 from careintel.persistence.repositories.structuring_repo import StructuringRepository
 from careintel.persistence.repositories.text_content_repo import TextContentRepository
+from careintel.persistence.repositories.user_repo import UserRepository
+from careintel.workers.executor import execute_durable_task
+from careintel.workers.handoff_tasks import _handle_handoff
 
 pytestmark = pytest.mark.integration
 
@@ -73,8 +101,10 @@ async def _chunks(value: bytes) -> AsyncGenerator[bytes, None]:
     yield value
 
 
-async def test_persisted_processing_retrieval_ai_safety_flow(settings: Settings) -> None:
-    """Assert durable Stage 1-3 effects without retaining synthetic database rows."""
+async def test_full_synthetic_application_workflow(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Exercise persisted processing through acknowledged human handoff."""
     if "test:test@" in settings.database_url.get_secret_value():
         pytest.skip("Recovery integration test requires configured PostgreSQL.")
     engine = build_engine(settings)
@@ -97,13 +127,14 @@ async def test_persisted_processing_retrieval_ai_safety_flow(settings: Settings)
         text_evidence_id = uuid.uuid4()
         document_evidence_id = uuid.uuid4()
         audio_evidence_id = uuid.uuid4()
+        synthetic_password = "Synthetic-R7-Password-Only"
         session.add_all(
             [
                 UserORM(
                     id=user_id,
                     email=f"recovery-actor-{user_id}@example.invalid",
                     display_name="Synthetic Recovery Actor",
-                    password_hash="synthetic-not-a-credential",
+                    password_hash=PasswordHasher().hash(synthetic_password),
                     is_active=True,
                 ),
                 UserORM(
@@ -116,38 +147,6 @@ async def test_persisted_processing_retrieval_ai_safety_flow(settings: Settings)
             ]
         )
         await session.flush()
-        session.add_all(
-            [
-                CaseORM(
-                    id=case_id,
-                    synthetic_subject_id=subject_id,
-                    facility_id=facility_id,
-                    state="INPUT_RECEIVED",
-                    version=1,
-                    opened_by=user_id,
-                ),
-                ConsentORM(
-                    id=uuid.uuid4(),
-                    subject_id=subject_id,
-                    purpose="data_processing",
-                    notice_version="1.0",
-                    state="ACTIVE",
-                    captured_by=user_id,
-                    captured_at=now,
-                ),
-                ConsentORM(
-                    id=uuid.uuid4(),
-                    subject_id=subject_id,
-                    purpose="ai_analysis",
-                    notice_version="1.0",
-                    state="ACTIVE",
-                    captured_by=user_id,
-                    captured_at=now,
-                ),
-            ]
-        )
-        await session.flush()
-
         permissions = {permission.value for permission in Permission}
         actor = UserContext(
             id=user_id,
@@ -158,8 +157,70 @@ async def test_persisted_processing_retrieval_ai_safety_flow(settings: Settings)
         )
         audit_repo = AuditRepository(session)
         consent_service = ConsentService(ConsentRepository(session), audit_repo)
+        auth_service = AuthService(
+            UserRepository(session),
+            SessionRepository(session),
+            audit_repo,
+            JWTService(settings),
+            PasswordHasher(),
+        )
+        token, login_context = await auth_service.login(
+            f"recovery-actor-{user_id}@example.invalid",
+            synthetic_password,
+            "recovery-stages-1-7",
+        )
+        authenticated = await auth_service.get_current_user(token)
+        assert login_context.id == user_id
+        assert authenticated.id == user_id
+
+        consent_ids: dict[str, uuid.UUID] = {}
+        for purpose in ("data_processing", "ai_analysis", "referral"):
+            requested = await consent_service.request_consent(
+                subject_id,
+                purpose,
+                "1.0",
+                "recovery-stages-1-7",
+            )
+            active = await consent_service.capture_consent(
+                requested.id,
+                actor,
+                "recovery-stages-1-7",
+            )
+            assert active.state == "ACTIVE"
+            consent_ids[purpose] = active.id
+        assert set(consent_ids) == {"data_processing", "ai_analysis", "referral"}
+
+        history_repo = CaseHistoryRepository(session)
+        case_outbox_repo = CaseOutboxRepository(session)
+        case_repo = CaseRepository(session)
+        case_service = CaseService(case_repo, history_repo, case_outbox_repo, audit_repo)
+        created_case = await case_service.create_case(
+            CreateCaseCommand(
+                synthetic_subject_id=subject_id,
+                facility_id=facility_id,
+                opened_by=user_id,
+                correlation_id="recovery-stages-1-7",
+            ),
+            actor,
+        )
+        case_id = created_case.case_id
+        current_case = created_case
+        for target in (CaseState.CONSENTED, CaseState.INPUT_RECEIVED):
+            current_case = await case_service.transition_state(
+                TransitionCaseCommand(
+                    case_id=case_id,
+                    actor_id=actor.id,
+                    from_state=current_case.state,
+                    to_state=target,
+                    expected_version=current_case.version,
+                    reason="Synthetic R7 intake workflow",
+                    correlation_id="recovery-stages-1-7",
+                ),
+                actor,
+            )
+
         encounter_service = EncounterService(
-            CaseRepository(session),
+            case_repo,
             EncounterRepository(session),
             consent_service,
             audit_repo,
@@ -481,6 +542,270 @@ async def test_persisted_processing_retrieval_ai_safety_flow(settings: Settings)
         )
         assert duplicate_draft.draft_id == draft.draft_id
 
+        # Advance through the authoritative case state machine. The AI run does
+        # not own or mutate workflow state.
+        current_case = await case_service.get_case(case_id, actor)
+        for target in (
+            CaseState.PROCESSING,
+            CaseState.EXTRACTING,
+            CaseState.NORMALIZING,
+            CaseState.RETRIEVING,
+            CaseState.AI_ANALYSIS,
+            CaseState.SAFETY_CHECK,
+            CaseState.TRIAGE_DRAFT_READY,
+            CaseState.REVIEW_PENDING,
+        ):
+            current_case = await case_service.transition_state(
+                TransitionCaseCommand(
+                    case_id=case_id,
+                    actor_id=actor.id,
+                    from_state=current_case.state,
+                    to_state=target,
+                    expected_version=current_case.version,
+                    reason="Synthetic R7 application workflow",
+                    correlation_id="recovery-stages-1-7",
+                ),
+                actor,
+            )
+
+        review_repo = ReviewRepository(session)
+        user_repo = AsyncMock()
+        user_repo.get_user_context.return_value = actor
+        review_service = ReviewService(
+            review_repo,
+            case_repo,
+            EncounterRepository(session),
+            user_repo,
+            consent_service,
+            audit_repo,
+        )
+        queue = await review_service.enter_review_queue(
+            case_id,
+            actor,
+            "recovery-stages-1-7",
+            encounter_id,
+        )
+        queue = await review_service.assign_reviewer(
+            case_id,
+            actor.id,
+            queue.version,
+            actor,
+            "recovery-stages-1-7",
+        )
+        assigned_version = queue.version
+        queue = await review_service.start_review(
+            case_id,
+            queue.version,
+            actor,
+            "recovery-stages-1-7",
+        )
+        assert queue.status == ReviewQueueStatus.IN_REVIEW.value
+        with pytest.raises(ConcurrencyError):
+            await review_service.start_review(
+                case_id,
+                assigned_version,
+                actor,
+                "recovery-stages-1-7",
+            )
+
+        persisted_draft = await ai_repo.get_draft(draft.draft_id)
+        assert persisted_draft is not None
+        accepted_draft = await DraftReviewService(
+            ai_repo,
+            review_repo,
+            case_repo,
+            consent_service,
+            audit_repo,
+        ).accept_draft(
+            draft.draft_id,
+            persisted_draft.version,
+            queue.version,
+            actor,
+            "recovery-stages-1-7",
+        )
+        reviewed_case = await case_repo.get_by_id(case_id)
+        assert reviewed_case is not None
+        decision = await ReviewDecisionService(
+            review_repo,
+            case_repo,
+            ai_repo,
+            history_repo,
+            case_outbox_repo,
+            consent_service,
+            audit_repo,
+        ).submit_decision(
+            case_id,
+            draft.draft_id,
+            ReviewDecisionType.REFER,
+            "Synthetic human referral approval",
+            reviewed_case.version,
+            queue.version,
+            accepted_draft.version,
+            actor,
+            "recovery-stages-1-7",
+        )
+        assert decision.reviewer_id == actor.id
+
+        recipient = RecipientORM(
+            id=uuid.uuid4(),
+            name="Synthetic R7 Recipient",
+            recipient_type="synthetic-channel",
+            config_json={"provider": "demo"},
+            is_active=True,
+        )
+        session.add(recipient)
+        await session.flush()
+        handoff_repo = HandoffRepository(session)
+        referral_service = ReferralPackageService(
+            handoff_repo,
+            case_repo,
+            evidence_repo,
+            review_repo,
+            ai_repo,
+            consent_service,
+            audit_repo,
+        )
+        package = await referral_service.prepare_referral_package(
+            case_id,
+            [text_evidence_id],
+            actor,
+            "recovery-stages-1-7",
+        )
+        package = await referral_service.finalize_package(
+            package.id,
+            actor,
+            "recovery-stages-1-7",
+        )
+        handoff_service = HandoffService(
+            handoff_repo,
+            case_repo,
+            history_repo,
+            case_outbox_repo,
+            consent_service,
+            audit_repo,
+        )
+        handoff = await handoff_service.initiate_handoff(
+            package.id,
+            recipient.id,
+            actor,
+            "recovery-stages-1-7",
+        )
+        handoff = await handoff_service.send_handoff(
+            handoff.id,
+            handoff.version,
+            actor,
+            "recovery-stages-1-7",
+        )
+
+        # Completion before delivery/acknowledgement is forbidden.
+        referred_case = await case_repo.get_by_id(case_id)
+        assert referred_case is not None
+        with pytest.raises(InvalidTransitionError):
+            await handoff_service.complete_handoff(
+                handoff.id,
+                handoff.version,
+                referred_case.version,
+                actor,
+                "recovery-stages-1-7",
+            )
+
+        await session.commit()
+        broker_send = MagicMock()
+        monkeypatch.setattr(
+            "careintel.application.workflow.outbox_dispatcher.celery_app.send_task",
+            broker_send,
+        )
+        dispatcher = UnifiedOutboxDispatcher(session_factory, dispatcher_id="synthetic-r7")
+        dispatcher._MODELS = {"case": CaseOutboxORM}
+        assert await dispatcher.dispatch_once(batch_size=50) == 1
+        send_event = (
+            await session.execute(
+                select(CaseOutboxORM)
+                .where(
+                    CaseOutboxORM.case_id == case_id,
+                    CaseOutboxORM.event_type == "HANDOFF_SEND_REQUESTED",
+                )
+                .execution_options(populate_existing=True)
+            )
+        ).scalar_one()
+        assert send_event.celery_task_id is not None
+        broker_send.assert_called_once()
+
+        monkeypatch.setattr(
+            "careintel.workers.executor.get_session_factory",
+            lambda: session_factory,
+        )
+        monkeypatch.setattr(
+            "careintel.workers.executor.load_worker_actor",
+            AsyncMock(return_value=actor),
+        )
+        task_result = await execute_durable_task(
+            send_event.celery_task_id,
+            _handle_handoff,
+            celery_task_id=send_event.celery_task_id,
+        )
+        assert task_result is not None
+        assert task_result["status"] == HandoffStatus.SENT.value
+        assert (
+            await execute_durable_task(
+                send_event.celery_task_id,
+                _handle_handoff,
+                celery_task_id=f"duplicate-{send_event.celery_task_id}",
+            )
+            is None
+        )
+        handoff = await session.get(HandoffORM, handoff.id, populate_existing=True)
+        assert handoff is not None and handoff.status == HandoffStatus.SENT.value
+        sent_version = handoff.version
+
+        unrelated = UserContext(
+            id=uuid.uuid4(),
+            is_active=True,
+            roles={"recovery-reviewer"},
+            permissions=permissions - {Permission.RECIPIENT_MANAGE.value},
+            role_facilities={"recovery-reviewer": facility_id},
+        )
+        with pytest.raises(AuthorizationError):
+            await handoff_service.record_acknowledgement(
+                handoff.id,
+                "forged-synthetic-ack",
+                handoff.version,
+                unrelated,
+                "recovery-stages-1-7",
+            )
+
+        handoff = await handoff_service.record_acknowledgement(
+            handoff.id,
+            "synthetic-recipient-ack",
+            handoff.version,
+            actor,
+            "recovery-stages-1-7",
+        )
+        assert handoff.status == HandoffStatus.ACKNOWLEDGED.value
+        with pytest.raises(ConcurrencyError):
+            await handoff_service.record_acknowledgement(
+                handoff.id,
+                "replayed-synthetic-ack",
+                sent_version,
+                actor,
+                "recovery-stages-1-7",
+            )
+        # The delivery worker commits through a separate session. Refresh the
+        # orchestration session's identity-map entry before asserting the
+        # authoritative state written by that worker.
+        final_case = await session.get(CaseORM, case_id, populate_existing=True)
+        assert final_case is not None and final_case.state == CaseState.REFERRED.value
+        handoff = await handoff_service.complete_handoff(
+            handoff.id,
+            handoff.version,
+            final_case.version,
+            actor,
+            "recovery-stages-1-7",
+        )
+        assert handoff.status == HandoffStatus.COMPLETED.value
+        final_case = await case_repo.get_by_id(case_id)
+        assert final_case is not None and final_case.state == CaseState.COMPLETED.value
+
         assert (
             await session.scalar(
                 select(func.count())
@@ -528,7 +853,55 @@ async def test_persisted_processing_retrieval_ai_safety_flow(settings: Settings)
                 .join(AIRunORM, AIRunORM.id == PolicyDecisionORM.ai_run_id)
                 .where(AIRunORM.case_id == case_id)
             )
-        ) == 5
+        ) == 6
+        assert (
+            await session.scalar(
+                select(func.count())
+                .select_from(ReviewDecisionORM)
+                .where(ReviewDecisionORM.case_id == case_id)
+            )
+        ) == 1
+        queue_row = await session.scalar(
+            select(ReviewQueueItemORM).where(ReviewQueueItemORM.case_id == case_id)
+        )
+        assert queue_row is not None
+        assert queue_row.status == ReviewQueueStatus.REVIEW_COMPLETE.value
+        task_row = await session.scalar(
+            select(AsyncTaskORM).where(AsyncTaskORM.id == uuid.UUID(send_event.celery_task_id))
+        )
+        assert task_row is not None
+        assert task_row.status == "SUCCEEDED"
+        assert task_row.attempt_count == 1
+        assert task_row.correlation_id == "recovery-stages-1-7"
+        assert task_row.causation_id == send_event.id
+        assert (
+            await session.scalar(
+                select(func.count())
+                .select_from(CaseStateHistoryORM)
+                .where(CaseStateHistoryORM.case_id == case_id)
+            )
+        ) >= 11
+        audits = (
+            (
+                await session.execute(
+                    select(AuditLogORM).where(
+                        AuditLogORM.correlation_id.in_(
+                            ["recovery-stages-1-3", "recovery-stages-1-7"]
+                        )
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert {"task_started", "task_succeeded", "handoff_completed"} <= {
+            audit.event_type for audit in audits
+        }
+        task_audits = [audit for audit in audits if audit.target_type == "async_task"]
+        assert task_audits
+        assert all(audit.source in {"dispatcher", "worker"} for audit in task_audits)
+        assert any(audit.causation_id == send_event.id for audit in task_audits)
+        assert original_text not in str([audit.detail for audit in audits])
     finally:
         await session.close()
         if outer.is_active:

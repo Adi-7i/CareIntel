@@ -14,7 +14,6 @@ from careintel.core.config import Settings
 from careintel.core.database import build_engine, build_session_factory
 from careintel.domain.workflow.models import AsyncTaskPayload
 from careintel.domain.workflow.task_states import AsyncTaskStatus
-from careintel.persistence.models.audit import AuditLogORM
 from careintel.persistence.models.case import CaseORM, CaseOutboxORM
 from careintel.persistence.models.handoff import HandoffORM, RecipientORM, ReferralPackageORM
 from careintel.persistence.models.user import UserORM
@@ -194,9 +193,8 @@ async def test_real_celery_handoff_task_is_durable_and_idempotent(settings: Sett
                 assert handoff is not None and handoff.attempt_count == 1
     finally:
         async with session_factory() as session:
-            await session.execute(
-                delete(AuditLogORM).where(AuditLogORM.correlation_id == correlation_id)
-            )
+            # Audit records are intentionally retained: database-enforced append-only
+            # history must not gain a test-only deletion bypass.
             await session.execute(delete(CaseOutboxORM).where(CaseOutboxORM.case_id == case_id))
             await session.execute(delete(CaseORM).where(CaseORM.id == case_id))
             await session.execute(delete(RecipientORM).where(RecipientORM.id == recipient_id))

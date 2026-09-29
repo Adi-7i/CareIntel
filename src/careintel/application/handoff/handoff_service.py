@@ -10,7 +10,12 @@ from ulid import ULID
 
 from careintel.application.auth.consent_service import ConsentService
 from careintel.application.auth.permission_service import PermissionService
-from careintel.core.errors import ConcurrencyError, InvalidTransitionError, NotFoundError
+from careintel.core.errors import (
+    AuthorizationError,
+    ConcurrencyError,
+    InvalidTransitionError,
+    NotFoundError,
+)
 from careintel.domain.audit.events import AuditEventType
 from careintel.domain.auth.models import UserContext
 from careintel.domain.auth.permissions import Permission
@@ -65,6 +70,27 @@ class HandoffService:
     @staticmethod
     def _idempotency_key(case_id: uuid.UUID, package_id: uuid.UUID, recipient_id: uuid.UUID) -> str:
         return hashlib.sha256(f"{case_id}:{package_id}:{recipient_id}".encode()).hexdigest()
+
+    @staticmethod
+    def _require_acknowledgement_recorder(
+        handoff: HandoffORM,
+        actor: UserContext,
+        facility_id: uuid.UUID | None,
+    ) -> None:
+        """Limit acknowledgement/completion to the sender or recipient administrators."""
+        if actor.id == handoff.sent_by:
+            return
+        try:
+            PermissionService.check(
+                actor,
+                Permission.RECIPIENT_MANAGE,
+                facility_scope=facility_id,
+            )
+        except AuthorizationError as exc:
+            raise AuthorizationError(
+                "Only the sender or an authorized recipient administrator may "
+                "record handoff receipt."
+            ) from exc
 
     async def initiate_handoff(
         self,
@@ -237,7 +263,8 @@ class HandoffService:
         handoff = await self.handoff_repo.get_handoff_for_update(handoff_id, expected_version)
         if handoff is None:
             raise ConcurrencyError("Handoff is missing or stale.")
-        await self._authorized_case(handoff.case_id, actor, Permission.HANDOFF_WRITE)
+        case = await self._authorized_case(handoff.case_id, actor, Permission.HANDOFF_WRITE)
+        self._require_acknowledgement_recorder(handoff, actor, case.facility_id)
         if handoff.status == HandoffStatus.ACKNOWLEDGED.value:
             return handoff
         HandoffStateMachine.validate_transition(handoff.status, HandoffStatus.ACKNOWLEDGED)
@@ -268,7 +295,10 @@ class HandoffService:
         )
         if handoff is None:
             raise ConcurrencyError("Handoff is missing or stale.")
-        await self._authorized_case(handoff.case_id, actor, Permission.HANDOFF_WRITE)
+        authorized_case = await self._authorized_case(
+            handoff.case_id, actor, Permission.HANDOFF_WRITE
+        )
+        self._require_acknowledgement_recorder(handoff, actor, authorized_case.facility_id)
         if handoff.status == HandoffStatus.COMPLETED.value:
             return handoff
         HandoffStateMachine.validate_transition(handoff.status, HandoffStatus.COMPLETED)

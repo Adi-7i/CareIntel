@@ -165,6 +165,8 @@ class UnifiedOutboxDispatcher:
                     target_id=claimed.task_id,
                     target_type="async_task",
                     correlation_id=event.correlation_id,
+                    causation_id=event.id,
+                    source="dispatcher",
                     outcome="SUCCESS",
                     detail={"event_type": event.event_type},
                 )
@@ -197,6 +199,8 @@ class UnifiedOutboxDispatcher:
                     target_id=claimed.task_id,
                     target_type="async_task",
                     correlation_id=event.correlation_id,
+                    causation_id=event.id,
+                    source="dispatcher",
                     outcome="FAILURE",
                     detail={
                         "event_type": event.event_type,
@@ -262,6 +266,8 @@ class UnifiedOutboxDispatcher:
                     target_id=None,
                     target_type=f"{outbox_kind}_outbox",
                     correlation_id=event.correlation_id,
+                    causation_id=event.id,
+                    source="dispatcher",
                     outcome="SUCCESS",
                     detail={"event_type": event.event_type},
                 )

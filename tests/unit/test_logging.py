@@ -79,6 +79,18 @@ class TestSensitiveDataFilter:
         f.filter(record)
         assert record.authorization == "[REDACTED]"  # type: ignore[attr-defined]
 
+    def test_nested_sensitive_values_are_redacted(self) -> None:
+        record = self._make_record(
+            metadata={"provider": "synthetic", "credentials": {"api_key": "secret-value"}}
+        )
+
+        SensitiveDataFilter().filter(record)
+
+        assert record.metadata == {  # type: ignore[attr-defined]
+            "provider": "synthetic",
+            "credentials": {"api_key": "[REDACTED]"},
+        }
+
 
 @pytest.mark.unit
 class TestLoggingConfiguration:
