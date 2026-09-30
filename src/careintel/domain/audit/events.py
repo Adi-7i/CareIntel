@@ -15,6 +15,7 @@ class AuditEventType(StrEnum):
     LOGOUT = "logout"
     TOKEN_REVOKED = "token_revoked"  # noqa: S105
     AUTH_DENIED = "auth_denied"
+    ADMIN_BOOTSTRAPPED = "admin_bootstrapped"
     CONSENT_REQUESTED = "consent_requested"
     CONSENT_CAPTURED = "consent_captured"
     CONSENT_WITHDRAWN = "consent_withdrawn"
