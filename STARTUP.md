@@ -327,6 +327,10 @@ Verify that ORM metadata would not generate another migration:
 The current repository head is **`0014`**. A healthy current database reports `0014 (head)`, and a
 clean drift check reports `No new upgrade operations detected.`
 
+The drift check may also emit Alembic's warning that the computed default on
+`knowledge_chunks.fts_vector` cannot be modified. The current verified check still exits successfully
+with no upgrade operations; do not hide a different warning or non-zero exit status.
+
 Run migrations before starting API, worker, or dispatcher processes for a new release. Never edit an
 already-applied migration, delete migration history, reset production data, or use `alembic stamp`
 to conceal drift. Create a new migration for a demonstrated schema change.
