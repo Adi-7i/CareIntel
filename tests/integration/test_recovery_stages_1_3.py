@@ -34,9 +34,11 @@ from careintel.application.retrieval.retrieval_service import RetrievalService
 from careintel.application.review.decision_service import ReviewDecisionService
 from careintel.application.review.draft_service import DraftReviewService
 from careintel.application.review.review_service import ReviewService
+from careintel.application.review.workspace_service import WorkspaceService
 from careintel.application.structuring.structuring_service import StructuringService
 from careintel.application.workflow.outbox_dispatcher import UnifiedOutboxDispatcher
 from careintel.core.config import Settings
+from careintel.core.correlation import _correlation_id_var
 from careintel.core.database import build_engine
 from careintel.core.errors import AuthorizationError, ConcurrencyError, InvalidTransitionError
 from careintel.domain.ai.status import DraftReviewerStatus, TaskType, ValidationStatus
@@ -117,6 +119,7 @@ async def test_full_synthetic_application_workflow(
         join_transaction_mode="create_savepoint",
     )
     session = session_factory()
+    correlation_token = _correlation_id_var.set("recovery-stages-1-3")
     try:
         now = datetime.datetime.now(datetime.UTC)
         user_id = uuid.uuid4()
@@ -608,6 +611,44 @@ async def test_full_synthetic_application_workflow(
                 "recovery-stages-1-7",
             )
 
+        workspace_service = WorkspaceService(
+            case_repo,
+            review_repo,
+            EncounterRepository(session),
+            evidence_repo,
+            TextContentRepository(session),
+            processing_repo,
+            structuring_repo,
+            retrieval_repo,
+            ai_repo,
+            HandoffRepository(session),
+            consent_service,
+            audit_repo,
+        )
+        workspace = await workspace_service.get_reviewer_workspace(
+            case_id,
+            actor,
+            "recovery-stages-1-7",
+        )
+        assert len(workspace["original_evidence"]) == 3
+        assert all(item["origin"] == "ORIGINAL_EVIDENCE" for item in workspace["original_evidence"])
+        assert workspace["derived_information"]["processing"]
+        assert workspace["ai_content"]["drafts"][0]["origin"] == "AI_GENERATED"
+        assert workspace["ai_content"]["drafts"][0]["provenance"]
+        unauthorized_reviewer = UserContext(
+            id=uuid.uuid4(),
+            is_active=True,
+            roles={"recovery-reviewer"},
+            permissions=permissions,
+            role_facilities={"recovery-reviewer": uuid.uuid4()},
+        )
+        with pytest.raises(AuthorizationError):
+            await workspace_service.get_reviewer_workspace(
+                case_id,
+                unauthorized_reviewer,
+                "recovery-stages-1-7",
+            )
+
         persisted_draft = await ai_repo.get_draft(draft.draft_id)
         assert persisted_draft is not None
         accepted_draft = await DraftReviewService(
@@ -894,15 +935,43 @@ async def test_full_synthetic_application_workflow(
             .scalars()
             .all()
         )
-        assert {"task_started", "task_succeeded", "handoff_completed"} <= {
-            audit.event_type for audit in audits
-        }
+        observed_audit_events = {audit.event_type for audit in audits}
+        assert {
+            "login_success",
+            "consent_requested",
+            "consent_captured",
+            "case_created",
+            "case_state_transition",
+            "encounter_created",
+            "processing_completed",
+            "case_structured",
+            "retrieval_executed",
+            "ai_run_started",
+            "ai_run_completed",
+            "review_queue_entered",
+            "reviewer_assigned",
+            "review_started",
+            "review_workspace_accessed",
+            "ai_draft_accepted",
+            "review_decision_submitted",
+            "referral_package_created",
+            "referral_package_finalized",
+            "handoff_initiated",
+            "handoff_send_requested",
+            "outbox_dispatched",
+            "task_started",
+            "handoff_sent",
+            "task_succeeded",
+            "handoff_acknowledged",
+            "handoff_completed",
+        } <= observed_audit_events
         task_audits = [audit for audit in audits if audit.target_type == "async_task"]
         assert task_audits
         assert all(audit.source in {"dispatcher", "worker"} for audit in task_audits)
         assert any(audit.causation_id == send_event.id for audit in task_audits)
         assert original_text not in str([audit.detail for audit in audits])
     finally:
+        _correlation_id_var.reset(correlation_token)
         await session.close()
         if outer.is_active:
             await outer.rollback()

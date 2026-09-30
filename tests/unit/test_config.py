@@ -22,6 +22,7 @@ class TestSettings:
         assert s.app_env == Environment.DEVELOPMENT
         assert s.app_port == 8000
         assert s.app_log_level == LogLevel.INFO
+        assert s.readiness_timeout_seconds == 30.0
 
     def test_rejects_sync_database_url(self) -> None:
         """Synchronous PostgreSQL driver scheme is rejected at validation time."""

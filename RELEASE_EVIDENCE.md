@@ -1,365 +1,415 @@
-# CareIntel Release Evidence
+# CareIntel R8 Release Evidence
 
-## 1. Release Scope
+## 1. Release scope
 
-This report records the final hardening and verification performed against the current CareIntel repository. It covers repository/build integrity, PostgreSQL and pgvector, Azure Blob Storage, Redis/Celery connectivity, configured Azure AI providers, authentication and selected security controls, failure behavior, the available synthetic E2E path, audit integrity, observability, and documentation.
+This document records the R8 final-release validation executed on 2026-09-30.
+It reports observed results rather than planned behavior.
 
-- Docker was explicitly excluded. No Docker files or container infrastructure were added.
-- The existing FastAPI, application/domain service, PostgreSQL/pgvector, Azure Blob, Redis/Celery, Azure AI, transactional outbox, and persisted state-machine architecture was preserved.
-- All created or executed fixtures used synthetic data. No real patient data or PHI was used.
-- Live checks used the configured external Supabase PostgreSQL, pgvector, Redis, Azure Blob, Azure OpenAI, and Azure Document Intelligence resources where stated.
-- No local PostgreSQL or Redis was installed.
-- No external resource was reset, truncated, dropped, or destructively modified.
+- Docker, Kubernetes, microservices, LangGraph, additional databases, vector
+  stores, and brokers were excluded.
+- The existing FastAPI, PostgreSQL/pgvector, Azure Blob, Redis/Celery,
+  transactional outbox, Azure AI, JWT/RBAC/consent, and audit architecture was
+  preserved.
+- Only synthetic data was used. No real patient data or PHI was introduced.
+- External infrastructure was not reset, truncated, dropped, or otherwise
+  destructively modified.
+- Deterministic providers were used inside the repeatable full application
+  workflow. Configured Azure providers were verified separately at their real
+  integration boundaries.
 
-This is evidence for the repository state described below. It is not a compliance certification or a claim of comprehensive security.
+The 2026-09-23 evidence snapshot reported `RELEASE BLOCKED` at commit `c3fdd50`.
+R4-R7 commits subsequently implemented async execution, human review/handoff,
+audit immutability, security hardening, recovery behavior, and a full synthetic
+application workflow. R8 re-ran those release-critical paths; it does not
+retroactively describe the older snapshot as passing.
 
-## 2. Repository State
+## 2. Repository and environment snapshot
 
 | Item | Observed value |
 |---|---|
+| Verification time | `2026-09-30T13:35:43+05:30` |
 | Branch | `E2E` |
-| Base commit | `c3fdd50aa8bb27e092dd244abf5da75ea3b98bd9` |
-| Working tree | Modified by this hardening phase; not committed |
+| Verified base commit | `bc6756789d102e95624c7567c9355d2868921c60` |
+| R8 working tree | Corrective changes listed in section 13; not committed |
 | Package version | `0.1.0` |
 | Python | `3.12.3` |
-| Alembic head | `0010` |
-| Verification date | `2026-09-23` (Asia/Kolkata) |
-| Evidence snapshot time | `2026-09-23T01:26:25+05:30` |
-| Dependency lock | `uv lock --check`: PASS, 100 packages resolved |
-| Package build | `UV_CACHE_DIR=/tmp/careintel-uv-cache uv build --out-dir /tmp/careintel-release-build`: PASS after network access was permitted; sdist and wheel built in `/tmp` |
+| Alembic head | `0013` |
+| Dependency lock | `UV_CACHE_DIR=/tmp/careintel-r8-uv-cache uv lock --check`: PASS; 100 packages |
 
-The initial package build attempt was blocked by sandbox DNS restrictions. The required external build dependency was then fetched with approved network access and the same build completed successfully.
+Production configuration remains environment-based and uses secret-valued
+settings for credentials. A source scan found no committed real password, API
+key, token, connection string, or signed URL. Production-mode validation rejects
+debug/SQL echo, missing required external configuration, and demo/unconfigured
+LLM, embedding, TTS, STT, and OCR providers.
 
-### Static and test results
+## 3. Forensic release-readiness scan
 
-| Verification | Actual command | Result |
+The repository was searched for `TODO`, `FIXME`, placeholders, stubs,
+`NotImplementedError`, HTTP 501, fake success, bypasses, hardcoded credentials,
+disabled security checks, and debug shortcuts.
+
+| Classification | Finding | Release impact |
 |---|---|---|
-| Lint | `.venv/bin/ruff check src/careintel tests scripts test_env.py test_celery.py` | PASS |
-| Active-code formatting | `.venv/bin/ruff format --check src/careintel tests scripts test_env.py test_celery.py` | PASS; 287 files formatted |
-| Whole-repository formatting | `.venv/bin/ruff format --check .` | FAIL; five historical applied Alembic files would be reformatted |
-| Type checking | `.venv/bin/mypy src/careintel` | PASS; 230 source files |
-| Byte compilation | `.venv/bin/python -m compileall -q src/careintel tests scripts` | PASS |
-| Primary pytest/coverage suite | `.venv/bin/python -m pytest --cov=careintel --cov-report=term-missing --cov-report=json:coverage.json` | 192 passed, 3 skipped; 71.92% coverage; zero failed |
-| Live integration run | `.venv/bin/python -m pytest tests/integration -q --run-integration` | 4 passed |
-| Live synthetic E2E run | `.venv/bin/python -m pytest tests/e2e/test_golden_path.py -q --run-e2e` | 1 passed; scope is partial and described below |
-| Diff whitespace | `git diff --check` | PASS |
+| CRITICAL | None observed after verification | None |
+| HIGH | Configured diarization requested plain `json`, which cannot carry speaker annotations | Fixed in R8; contract test and real Azure smoke now pass |
+| MEDIUM | Five applied historical migrations contain Ruff style issues | Non-runtime; applied migration history was not rewritten for formatting |
+| LOW | Unused `CapabilityNotImplementedError` definition remains available | No route raises it; runtime OpenAPI audit found no 501 release route |
+| NON-BLOCKING | Demo/fake adapters occur in development and test code | Production configuration rejects them for externally wired capabilities |
 
-The five whole-repository format failures are `migrations/env.py` and migrations `0007` through `0010`. Applied migration history was not mechanically rewritten solely to make the formatter green.
+No release-required route returned `501 NOT_IMPLEMENTED`. Runtime route review
+found 60 registered method/path keys, 51 OpenAPI paths, no duplicate route keys,
+and no debug-only route.
 
-## 3. Infrastructure Verification
+## 4. Final high-value verification checks
 
-### PostgreSQL / Supabase
-
-| Check | Method | Result |
+| Check | Actual command | Result |
 |---|---|---|
-| Connectivity | `scripts/verify_infra.py` | PASS |
-| Applied revision | `.venv/bin/alembic current` | PASS: `0010 (head)` |
-| Static head | `.venv/bin/alembic heads` | PASS: `0010 (head)` |
-| ORM/schema drift | `.venv/bin/alembic check` | PASS: no new upgrade operations detected |
-| pgvector extension | `scripts/verify_infra.py` | PASS |
-| Vector column | Live metadata query | PASS: `vector(1536)` |
-| Vector index/operator class | Live metadata query | PASS: HNSW cosine index |
-| Database probe latency | Single infrastructure probe | 16,279.93 ms |
+| 1 — security, authorization, consent, audit | `.venv/bin/python -m pytest tests/unit/test_auth.py tests/unit/test_consent.py tests/unit/test_security.py tests/unit/test_handoff_security.py tests/integration/test_recovery_r6_security.py` | PASS — 32 passed in 29.58s |
+| 2 — async, outbox, Celery, idempotency | `.venv/bin/python -m pytest tests/unit/workflow/test_task_service.py tests/integration/test_recovery_r4_async.py tests/integration/test_recovery_r4_celery.py` | PASS — 6 passed in 269.58s |
+| 3 — full synthetic application workflow | `.venv/bin/python -m pytest tests/integration/test_recovery_stages_1_3.py` | PASS — 1 passed in 456.46s |
+| 4 — failure, readiness, observability, safety | `.venv/bin/python -m pytest tests/unit/test_config.py tests/api/test_health.py tests/unit/test_startup_safety.py tests/unit/test_correlation.py tests/unit/test_logging.py tests/unit/test_errors.py tests/unit/ai/test_policy_service.py` | PASS — 47 passed in 1.46s |
+| 4b — live runtime | `.venv/bin/python scripts/verify_runtime.py` | PASS — startup, liveness, readiness, auth rejection, OpenAPI, route audit, bounded probes |
+| 5 — concise regression | `.venv/bin/python -m pytest -m 'not integration'` | PASS — 221 passed, 9 deselected in 62.09s |
 
-ORM registration, timestamp/default alignment, the vector type, generated full-text column, GIN index, and HNSW metadata were corrected to match the applied schema. No applied migration was edited and no new migration was required after `alembic check` reached a clean result.
+The same test may appear in a focused check and the concise regression command;
+counts above are per command and are not presented as a unique-test total.
 
-Limitation: existing migration `0010` rebuilds the prior embedding column/index when first applied. It was already the live head and was not re-executed during this phase.
+Additional final validation:
 
-### Azure Blob Storage
-
-`scripts/verify_infra.py` executed against the real configured adapter using a synthetic object.
-
-| Check | Result |
+| Verification | Result |
 |---|---|
-| Container access | PASS |
-| Synthetic upload | PASS |
-| Download | PASS |
-| Byte integrity | PASS |
-| Time-limited access URL generation | PASS |
-| Missing-object behavior | PASS |
-| Cleanup | PASS |
-| Probe duration | 2,866.46 ms |
+| `.venv/bin/ruff check src tests scripts` | PASS |
+| `.venv/bin/ruff format --check src tests scripts` | PASS; 320 files |
+| `.venv/bin/mypy src/careintel` | PASS; 250 source files |
+| `.venv/bin/python -m compileall -q src tests scripts` | PASS |
+| `git diff --check` | PASS |
+| Azure STT request-format contract test | PASS; 2 passed in 0.10s |
 
-The adapter now closes its client during application shutdown. Logs do not include object keys, signed URLs, connection strings, or raw provider exceptions.
+## 5. Database and persistence
 
-The latest full runtime readiness rerun stalled during external Blob initialization and was operator-terminated after approximately 150 seconds without producing a readiness response. An earlier same-day runtime probe passed database, Redis, and Blob readiness. Therefore repeatable startup under external-service delay is PARTIAL, and startup timeout behavior remains a release limitation.
+| Check | Verification | Result |
+|---|---|---|
+| PostgreSQL/Supabase connectivity | Isolated `scripts/verify_infra.py` PostgreSQL probe | PASS; 17,724.94ms |
+| Applied migration | `timeout 60s .venv/bin/alembic current` | PASS — `0013 (head)` |
+| ORM/schema drift | `timeout 60s .venv/bin/alembic check` | PASS — no new upgrade operations detected |
+| pgvector | Live extension metadata | PASS |
+| Vector dimension | Live column metadata | PASS — `vector(1536)` |
+| Vector index | Live index/operator metadata | PASS — HNSW cosine index |
+| Audit immutability | Direct UPDATE and DELETE attempts in rollback-isolated live test | PASS — PostgreSQL trigger rejected both |
+| Outbox/task/idempotency persistence | Live integration tests | PASS |
+| Workflow/review/handoff persistence | Full synthetic live-database workflow | PASS |
 
-### Redis
+Migration `0013` adds audit trace fields and query indexes and installs a
+PostgreSQL trigger that rejects UPDATE or DELETE on `audit_logs`. It existed
+before R8 and was verified at the live database head. R8 added no migration and
+did not mutate production schema manually.
 
-| Check | Result |
-|---|---|
-| Direct ping | PASS; 396.65 ms |
-| Celery broker connection | PASS; 418.18 ms |
-| Safe payload review | PARTIAL; task boundaries use identifiers/metadata, but no exhaustive broker inspection was performed |
-| Interruption/recovery drill | NOT VERIFIED; interruption of the shared external service was not safe in this environment |
+The first combined infrastructure probe's database portion hit its command
+timeout. A bounded isolated retry passed, and all live database-backed final
+checks subsequently passed. This transient result is retained here rather than
+being converted into an initial pass.
 
-### Celery
+## 6. External infrastructure and configured providers
 
-- A real `pool=solo` Celery worker was started against the configured Redis broker.
-- `celery inspect ping` returned one online worker and `pong`.
-- The worker was then stopped with a warm operator shutdown.
-- This verifies worker/broker control-plane connectivity, not successful execution of the incomplete CareIntel business task bodies.
-- Task idempotency, completed-duplicate behavior, stale recovery, and retry exhaustion were executed as unit tests.
-- Processing, retrieval, AI, and workflow task bodies now persist explicit `FAILED` state and raise `NOT_IMPLEMENTED`; they no longer sleep and report false success.
+### Infrastructure
 
-Business task execution, hosted outbox dispatch, outbox replay, crash/restart recovery, and bounded live provider retry are NOT VERIFIED. The outbox dispatcher also retains a dispatch-before-commit race and has no continuously hosted runner. These are release blockers.
+| Dependency | Executed verification | Result |
+|---|---|---|
+| Azure Blob | Synthetic upload, metadata, byte-integrity download, authorized time-limited access, missing-object behavior, cleanup | PASS — 12,218.82ms |
+| Redis | Real ping | PASS — 3,419.41ms |
+| Celery broker | Real configured broker connection | PASS — 6,202.96ms |
+| Celery worker path | Real worker execution through Redis, database state update, duplicate delivery | PASS |
 
-## 4. AI Provider Verification
+The Blob object was synthetic and removed by the verification script. No signed
+URL, connection string, key, object content, or credential was written into this
+evidence.
 
-`scripts/verify_providers.py` executed real configured Azure provider calls. No provider credentials or full provider responses were printed or retained.
+### Azure AI providers
 
-| Provider / deployment | Purpose | Verification | Result | Observed latency |
-|---|---|---|---|---:|
-| Azure OpenAI / `gpt-5.6-luna` | Structured LLM | Valid structured synthetic response | PASS | 2,146.95 ms |
-| Azure OpenAI / `gpt-5.6-luna` | Injection resistance at provider boundary | Combined adversarial input was blocked by provider content filtering | PASS for this fixture | 2,440.28 ms |
-| Azure OpenAI / `text-embedding-3-small` | Embedding | Nonempty 1,536-dimension vector | PASS | 1,277.43 ms |
-| Azure OpenAI / `tts-hd` | Speech generation | Synthetic audio generated | PASS | 3,586.99 ms |
-| Azure OpenAI / configured STT deployment | Transcription | Generated synthetic audio produced nonempty transcript | PASS | 3,429.73 ms |
-| Azure OpenAI / configured diarization deployment | Speaker segmentation | Single-speaker fixture returned no speaker labels | NOT VERIFIED | 4,292.17 ms |
-| Azure Document Intelligence / `prebuilt-layout` | OCR | Native synthetic PDF returned text and page provenance | PASS for native-PDF fixture | 5,804.76 ms |
+`scripts/verify_providers.py` performed real configured provider calls with
+synthetic inputs. It printed only outcome and timing metadata.
 
-The LLM adapter was corrected to use a configurable API version that supports the existing structured-output path. Provider selection, endpoint/deployment configuration, authentication, structured schema handling, and sanitized error behavior were exercised by the probe.
+| Capability | Actual verification | Result | Observed latency |
+|---|---|---|---:|
+| Structured LLM | Schema-constrained synthetic response | PASS | 2,601.66ms |
+| Prompt-injection provider boundary | Adversarial synthetic fixture safely rejected by provider content filtering | PASS for fixture | 3,187.72ms |
+| Embedding | Exactly 1,536 values | PASS | 1,669.74ms |
+| TTS | Nonempty synthetic MP3 | PASS | 9,873.65ms |
+| STT | Nonempty transcript from synthetic TTS audio | PASS | 3,726.29ms |
+| Diarization | Provider-supplied speaker label after R8 response-format correction | PASS for single-speaker fixture | 4,531.09ms |
+| Document Intelligence | Native synthetic PDF text and page provenance | PASS | 8,638.91ms |
 
-The following were not executed and remain NOT VERIFIED: malformed live provider response, reproducible provider rate limiting, provider timeout recovery, multi-speaker diarization, noisy/silent/code-switched audio, Hindi/Odia fixtures, scanned/table/poor-quality/unreadable OCR fixtures, and an end-to-end application workflow consuming these provider outputs.
+The first post-fix diarization attempt timed out inside the restricted network;
+an unbuffered retry identified a network `ConnectError` during TTS. One approved,
+bounded external-network rerun then passed both TTS synthesis (4,241.85ms) and
+diarization. No unavailable provider response was treated as success.
 
-Production configuration now fails closed when the wired LLM, embedding, OCR, STT, or TTS capability is configured for a demo adapter or lacks required external credentials. Demo adapters remain available in development and testing.
+## 7. Full synthetic E2E and audit reconstruction
 
-## 5. OCR / STT / Diarization / TTS
+The full application-service test used a live configured PostgreSQL database,
+synthetic identities/data, transactional service boundaries, durable outbox/task
+records, and deterministic provider adapters. It did not insert final review or
+handoff states directly.
 
-### OCR
+Executed path:
 
-Native-PDF OCR, extracted text presence, page provenance, persistence-capable result structure, and original Blob preservation were exercised. No table was present in the executed fixture, so table provenance is NOT VERIFIED. The broader required document matrix is NOT VERIFIED.
+`Auth -> Consent -> Case -> Encounter -> Evidence -> Processing -> OCR/STT-like
+derived artifacts -> Extraction -> Provenance -> Timeline -> Missing Information
+-> Hybrid Retrieval -> AI Draft -> Validation/Safety -> Outbox -> Durable Task
+-> Reviewer Queue -> Assignment -> Workspace -> Review -> Human Approval ->
+Referral/Handoff -> Send -> Recipient Acknowledgement -> Completion`
 
-### STT and diarization
+Persisted assertions included:
 
-Synthetic TTS audio was transcribed through the real Azure adapter. Transcript presence and the adapter result structure were verified. The only diarization fixture was single-speaker and returned no speaker labels; multi-speaker diarization is NOT VERIFIED.
+- active consent and authorized case/encounter ownership;
+- three original evidence records preserved separately from derived processing;
+- processing, extraction, timeline, missing-information, retrieval, AI run, and
+  AI draft records;
+- provenance on structured and AI-derived content;
+- advisory AI output passing schema, identifier, evidence, provenance,
+  missing-information, prohibited-content, and deterministic policy validation;
+- durable outbox and async-task records with idempotent execution;
+- reviewer queue, assignment, workspace source visibility, explicit human
+  decision, and stale-write protection;
+- cross-facility workspace denial;
+- finalized referral package, send request, SENT state, recipient
+  acknowledgement, and only then COMPLETED state;
+- repeated acknowledgement and invalid transitions do not duplicate or bypass
+  business effects;
+- audit reconstruction across authentication, consent, case, encounter,
+  processing, structuring, retrieval, AI, review, outbox/task, handoff, send,
+  acknowledgement, and completion events;
+- correlation/causation metadata on the application, dispatcher, and worker
+  portions of the flow;
+- original synthetic narrative absent from serialized audit metadata.
 
-### TTS application path
+The E2E uses a mocked Celery sender so it can deterministically drive the durable
+executor; Check 2 independently verifies the same business task through a real
+Celery worker and Redis broker. Real Azure provider boundaries are verified in
+section 6.
 
-`scripts/verify_tts_api.py` exercised:
+## 8. Security and safety evidence
 
-`POST API route -> authorization dependency -> application speech service -> Azure TTS adapter -> audit call -> binary response`
+| Area | Executed behavior | Result |
+|---|---|---|
+| JWT authentication | Missing, malformed, expired, forged, wrong issuer/audience/signature | PASS |
+| Authorization/RBAC | Permission, role, case/facility, review, handoff, and acknowledgement denial paths | PASS for release-critical paths |
+| Consent | Missing, withdrawn, invalid/stale/mismatched consent and protected processing | PASS |
+| Reviewer/handoff authorization | Unrelated actor cannot review or acknowledge; permitted sender/recipient manager can | PASS |
+| Audit | Append-only repository and database trigger; trace metadata sanitized | PASS |
+| Idempotency/replay | Duplicate API/task/outbox/handoff effects remain single | PASS |
+| Optimistic concurrency | Stale reviewer/workflow version raises deterministic conflict | PASS |
+| Workflow protection | Mandatory approval, no acknowledgement before send, SENT not COMPLETED, completion requires acknowledgement | PASS |
+| AI schema/provenance/policy | Unsupported identifiers, claims, citations, provenance, missing information, and prohibited output rejected | PASS |
+| Prompt injection | Patient, OCR, STT, extracted fields, and retrieved text remain untrusted data; no arbitrary tool/workflow authority | PASS for executed matrix |
+| Cross-case isolation | Retrieval/context/workspace authorization does not mix case/facility data | PASS for executed paths |
+| Sensitive logging | Executed output and structured-log tests contain no secret or raw narrative leakage | PASS for executed paths |
 
-| Check | Result |
-|---|---|
-| Missing JWT rejected | PASS |
-| Authorized route | PASS, using a synthetic dependency override for identity |
-| Nonempty audio body | PASS |
-| Audio content type | PASS |
-| End-to-end probe latency | 16,239.49 ms |
+CareIntel continues to treat AI output as reviewer-facing advisory content. The
+AI path cannot approve, escalate, refer, acknowledge, complete, or otherwise
+mutate authoritative workflow state.
 
-Actual JWT/session behavior was verified separately by the live authentication probe.
-
-## 6. Golden E2E Result
-
-Status: **FAIL for the required complete golden path; PARTIAL for the executable repository scenario.**
-
-The live synthetic E2E test passed and asserted persisted state for:
-
-1. synthetic administrator context;
-2. active consent;
-3. case creation;
-4. case state in PostgreSQL;
-5. durable case outbox event;
-6. case audit record.
-
-It uses dependency overrides/fake providers and ends after case creation/outbox/audit. It does not authenticate through the public login route and does not execute encounter creation, evidence upload, processing, OCR/STT persistence, extraction, timeline, missing-information evaluation, hybrid retrieval, AI drafting, reviewer approval, escalation, referral sending, recipient acknowledgement, or final audit reconstruction.
-
-No encounter API exists. The incomplete structuring, review, escalation, referral, and handoff HTTP paths now return explicit `501 NOT_IMPLEMENTED` rather than static success. There is no public complete knowledge/retrieval/AI workflow. Accordingly, HTTP success and the partial E2E test are not treated as evidence for the requested full workflow.
-
-## 7. Security Verification
-
-| Security area | Test | Result | Evidence |
-|---|---|---|---|
-| Authentication | Missing/malformed/expired/forged signature/wrong issuer/wrong audience JWT | PASS | Unit/API security suite and runtime probe |
-| Live authentication | Wrong password, token issue, JWT profile load, logout, replay after revocation | PASS | `scripts/verify_auth_live.py` |
-| Live test identity cleanup | Synthetic account deactivated | PASS | `scripts/verify_auth_live.py` |
-| Authorization | Permission and role rejection | PASS for tested cases | Unit/API security suite |
-| Facility boundary | Missing or mismatched facility mapping denied | PASS | Auth policy and case service tests |
-| Cross-object BOLA | Case/evidence selected paths tested | PARTIAL | No complete draft/referral/audit cross-object matrix |
-| RBAC | Unauthorized/insufficient roles | PARTIAL | Stale claims and every clinical/admin boundary not fully exercised |
-| Consent | Missing, withdrawn, stale, purpose/version mismatch, cross-subject evidence consent | PASS for implemented paths | Consent/evidence tests |
-| Upload | Traversal, extension, magic bytes, MIME mismatch, size/unsupported type | PARTIAL | No active-content, polyglot, decompression-abuse, or real scanner test |
-| Production provider fallback | Demo/missing external provider configuration | PASS: rejected | `tests/unit/test_config.py` |
-| Prompt injection | Patient/OCR/STT/knowledge/extracted input remains user data; combined live attack fixture | PARTIAL/PASS for fixtures | Structural unit tests and provider content-filter result |
-| Secret/system prompt exposure | No exposure observed in executed fixtures | PARTIAL | Not an exhaustive adversarial evaluation |
-| Workflow action injection | No arbitrary tool surface; incomplete workflow actions return 501 | PASS for exposed scaffold boundary | Architecture/API tests |
-| Sensitive logging | Secret-safe logging and probe output review | PARTIAL | No full dynamic log/metric/trace leakage harness |
-| Audit mutation | Direct SQL UPDATE and DELETE attempts | FAIL: database allowed both inside rollback-only transactions | `scripts/verify_audit_integrity.py` |
-| Duplicate commands/tasks | Existing key, completed duplicate, stale task, retry exhaustion | PARTIAL | Unit tests; live duplicate delivery not executed |
-
-Live authentication provisioned a random synthetic account without printing its password, token, or address. It verified wrong-password rejection, token issuance, role/permission hydration, logout revocation, replay rejection, and deactivation. This probe found and led to correction of a defect where JWT `iat`/`exp` claims were dropped before session persistence.
-
-Facility-role mappings are now loaded into the request context, and an absent mapping no longer grants global facility access. Evidence intake verifies that consent belongs to the subject and matches the required purpose/version before persistence.
-
-The application audit repository is append-only at its API boundary, but database-level immutability is not enforced. This report therefore does not claim immutable audit records.
-
-## 8. Failure / Recovery Verification
+## 9. Failure, recovery, health, and observability
 
 | Scenario | Result |
 |---|---|
-| Placeholder worker false success | PASS: prevented by architecture regression test and explicit failed state |
-| Duplicate durable task key | PASS in unit test; no duplicate record |
-| Duplicate already-completed task | PASS in unit test; no repeated business effect |
-| Stale task recovery | PASS in unit test; moved back to pending |
-| Retry exhaustion | PASS in unit test; durable failed state |
-| Missing Blob object | PASS in real adapter probe |
-| Blob cleanup | PASS in real adapter probe |
-| External Blob startup stall | OBSERVED; latest runtime probe did not complete and was terminated after about 150 seconds |
-| Provider content-filter rejection | PASS: no fabricated LLM output |
-| Outbox replay | NOT VERIFIED |
-| Worker crash/restart during business task | NOT VERIFIED |
-| Redis interruption | NOT VERIFIED; unsafe against shared external service |
-| Database outage | NOT VERIFIED; destructive/disruptive drill not authorized |
-| OCR/STT/TTS/LLM explicit outage | NOT VERIFIED as a live outage drill |
-| Provider rate limit/timeout | NOT VERIFIED |
+| Transient outbox/task failure, retry, success | PASS |
+| Duplicate delivery | PASS — no duplicate business side effect |
+| Retry exhaustion/permanent failure | PASS — explicit sanitized FAILED state |
+| Stale task recovery | PASS |
+| Stale reviewer update | PASS — conflict, no overwrite |
+| Referral send failure | PASS — explicit recoverable state |
+| Missing acknowledgement | PASS — remains SENT, not COMPLETED |
+| Provider failure/malformed output/policy rejection | PASS — explicit failure; no fabricated fallback or approval |
+| Missing Blob object | PASS — explicit failure |
+| Unavailable dependency | PASS for bounded readiness behavior; readiness reports failure rather than hanging |
 
-Provider and storage errors are sanitized to error type/category where corrected; no fallback clinical answer is invented. The application still lacks a bounded startup timeout around external Blob initialization, as demonstrated by the final readiness rerun.
+R8 changed the per-dependency readiness timeout default from 5 seconds to the
+existing bounded maximum of 30 seconds. The configured Supabase path exceeded
+the old 5-second bound during one live run; after correction, readiness returned
+success in 13,346.89ms with PostgreSQL, Redis, and Blob all healthy. Liveness did
+not depend on external probes.
 
-## 9. Performance Measurements
+Trace identifiers are propagated through request context, services, audit,
+outbox, dispatcher, worker/task, review, and handoff records. Health-route access
+logs are suppressed by route template rather than hardcoded mount prefix, which
+removed 100 redundant liveness log entries without suppressing failures.
 
-These are raw, small-sample observations, not clinical or production SLAs.
+Runtime verification observed:
 
-### In-process API probe
-
-An earlier successful same-day `scripts/verify_runtime.py` run issued 100 sequential in-process ASGI liveness requests:
-
-| Metric | Observed value |
+| Measurement | Observed value |
 |---|---:|
-| Mean | 0.365 ms |
-| p50 | 0.348 ms |
-| p95 | 0.453 ms |
-| p99 | 0.612 ms |
-| Readiness request | 11,819.46 ms |
+| In-process liveness mean | 0.408ms |
+| p50 | 0.382ms |
+| p95 | 0.526ms |
+| p99 | 0.680ms |
+| Live readiness | 13,346.89ms |
+| Full synthetic workflow | 456.46s |
 
-This sample excludes network ingress, concurrency, realistic application work, and queue/provider work. It is too small and artificial for capacity conclusions. The latest repeat of the same runtime script did not complete due to the external Blob startup stall.
+These are raw small-sample observations, not capacity results or SLAs. The E2E
+duration includes remote database latency and intentionally broad workflow
+coverage.
 
-### External probe observations
+## 10. Release gates
 
-Individual provider and infrastructure latencies are listed in sections 3 and 4. Queue wait, business worker execution time, complete evidence-processing time, reviewer delay, and full workflow duration were not measurable because the corresponding end-to-end path is incomplete.
+### G0 — Environment / Configuration
 
-## 10. Observability Verification
+- **STATUS:** PASS
+- **EVIDENCE:** Lock check, active-source lint/format/type/compile, production
+  fail-closed configuration, source secret scan, application startup, and route
+  audit passed.
+- **FAILURE:** Historical applied migrations retain style-only Ruff findings.
+- **IMPACT:** No runtime or schema impact.
+- **REMAINING ACTION:** Keep applied migration history immutable; enforce style
+  for new migrations.
 
-| Capability | Result |
-|---|---|
-| Structured JSON logging | PASS |
-| Correlation ID propagation/response | PASS in API tests/runtime probe |
-| Causation ID model support | PARTIAL; no full cross-worker live trace |
-| Durable task/provider identifiers | PARTIAL; modeled but incomplete workflow |
-| Health/liveness | PASS in earlier runtime probe |
-| Readiness dependency checks | PASS once; latest rerun stalled before completion |
-| OpenAPI generation | PASS: 44 paths |
-| Registered method/path audit | PASS: 52 method/path keys, zero duplicates |
-| Debug route audit | PASS in runtime probe |
-| Secret/PHI-safe logs | PARTIAL; reviewed executed output and corrected raw exception/URL logging, but no exhaustive sink audit |
-| Metrics/tracing backend | NOT VERIFIED; no complete exported telemetry path was demonstrated |
+### G1 — Database / Persistence
 
-The misleading startup route count was removed because FastAPI lazy routers made the top-level count incomplete. The dedicated recursive route audit is the evidence source for route registration.
+- **STATUS:** PASS
+- **EVIDENCE:** Live `0013` head, no Alembic drift, pgvector extension,
+  `vector(1536)`, HNSW cosine index, audit trigger, outbox/idempotency, and full
+  workflow persistence verified.
+- **FAILURE:** Initial combined database probe timed out; bounded isolated retry
+  and all subsequent database-backed checks passed.
+- **IMPACT:** No repeatable persistence failure observed.
+- **REMAINING ACTION:** Continue monitoring managed-database latency.
 
-## 11. Requirement Gap Matrix
+### G2 — Storage / External Infrastructure
 
-| ID | Category | Status | Evidence / limitation |
-|---|---|---|---|
-| A | Application startup | PARTIAL | Earlier lifespan pass; latest external Blob startup stalled |
-| B | Configuration | PASS | Typed settings, secret wrappers, production fail-closed provider tests |
-| C | Database | PASS | Live head, drift, schema, vector checks |
-| D | Authentication | PASS | Unit/API matrix plus live login/logout/replay |
-| E | Authorization | PARTIAL | Facility fix and selected BOLA tests; incomplete object matrix |
-| F | Consent | PASS | Lifecycle and evidence-consent tests |
-| G | Case lifecycle | PARTIAL | Create/history/transition services; only creation live E2E |
-| H | Evidence lifecycle | PARTIAL | Integrity and consent hardening; no complete live processing path |
-| I | Azure Blob | PASS | Real upload/download/integrity/SAS/missing/cleanup |
-| J | OCR | PARTIAL | Real native PDF only |
-| K | STT | PARTIAL | Real synthetic transcription; fixture matrix incomplete |
-| L | TTS | PASS | Real provider and API-service-provider path |
-| M | Extraction | PARTIAL | Internal/demo processing only; no live structured extraction E2E |
-| N | Provenance | PARTIAL | Models/unit checks and OCR page provenance; no full lineage reconstruction |
-| O | Timeline | PARTIAL | Internal structuring logic; public path is incomplete |
-| P | Missing information | PARTIAL | Unit/service logic; public path is incomplete |
-| Q | Retrieval | PARTIAL | Lexical/vector/fusion code and tests; no real case-to-draft E2E |
-| R | Embeddings | PASS | Real 1,536-vector provider call and DB dimension match |
-| S | pgvector | PASS | Live extension/column/index checks |
-| T | AI provider | PARTIAL | Real structured call; application workflow incomplete |
-| U | AI output validation | PARTIAL | Schema/provenance policy tests; full validation chain not E2E |
-| V | Safety policy | PARTIAL | Provenance rule only; prohibited-clinical-content suite incomplete |
-| W | Prompt injection | PARTIAL | Structural matrix plus one live combined fixture |
-| X | Async workflow | FAIL | Business task bodies intentionally fail as not implemented |
-| Y | Redis | PASS | Real ping and broker connection |
-| Z | Celery | PARTIAL | Real worker ping; no successful business task |
-| AA | Outbox | FAIL | Persistence verified; no hosted runner/replay and dispatch race remains |
-| AB | Idempotency | PARTIAL | Durable task unit tests; live duplicate matrix incomplete |
-| AC | Reviewer workflow | FAIL | HTTP boundary returns 501 |
-| AD | Approval | FAIL | No executable public human approval path |
-| AE | Escalation | FAIL | HTTP boundary returns 501 |
-| AF | Referral | FAIL | HTTP boundary returns 501 |
-| AG | Recipient acknowledgement | FAIL | No executable public completion path |
-| AH | Audit | FAIL | Partial append-only application design; DB UPDATE/DELETE allowed |
-| AI | Observability | PARTIAL | Logs/correlation/health present; no complete metrics/tracing evidence |
-| AJ | Security | PARTIAL | Executed matrix has meaningful passes and material unverified areas |
-| AK | Failure recovery | PARTIAL | Durable task unit recovery; live outage/replay drills incomplete |
-| AL | E2E | FAIL | Only case/outbox/audit partial scenario is executable |
-| AM | Documentation | PASS | README and environment example aligned with actual capabilities |
-| AN | Release evidence | PASS | This report is based on executed results and explicitly records failures |
+- **STATUS:** PASS
+- **EVIDENCE:** Real Azure Blob upload/download/integrity/access/missing/cleanup,
+  Redis ping, broker connectivity, Celery execution, and configured Azure
+  LLM/embedding/TTS/STT/diarization/OCR probes passed.
+- **FAILURE:** None release-critical in executed scope.
+- **IMPACT:** None observed.
+- **REMAINING ACTION:** Expand non-release fixture breadth listed in section 12.
 
-## 12. Release Gate Matrix
+### G3 — Authentication / Security
 
-| Gate | Status | Requirement and evidence | Limitations |
-|---|---|---|---|
-| G0 — Repository / Build Integrity | PARTIAL | Active lint/format/type/compile/tests pass; lock and package build pass | Five applied migration files fail whole-tree format |
-| G1 — Database / Persistence Integrity | PASS | Live `0010` head, clean Alembic drift, pgvector dimension/index, integration tests | Non-destructive verification only; existing 0010 deployment behavior noted above |
-| G2 — Security / Authorization | PARTIAL | Live authentication, JWT matrix, facility denial, consent and upload controls | Incomplete cross-object/RBAC/upload/leakage matrices; no real scanner |
-| G3 — Evidence / Processing / Provenance | PARTIAL | Blob integrity, OCR/STT provider checks, evidence validation | No complete processing pipeline or broad fixture matrix |
-| G4 — Retrieval / AI / Safety | PARTIAL | Real embedding/LLM calls, vector match, structural injection tests | Retrieval/application E2E absent; deterministic safety policy incomplete |
-| G5 — Async Workflow / Recovery | FAIL | Redis/Celery control plane and unit recovery work | Business workers/outbox runner/replay not operational; dispatch race |
-| G6 — Human Review / Handoff / Audit | FAIL | Models/state machines exist and false HTTP success was removed | Review/approval/referral/acknowledgement unavailable; audit DB mutable |
-| G7 — E2E / Operational / Documentation | FAIL | Partial E2E, docs, OpenAPI, health evidence exist | Required complete golden path absent; latest readiness stalled |
+- **STATUS:** PASS
+- **EVIDENCE:** 32-test focused security gate plus cross-facility workspace
+  denial, consent enforcement, database audit immutability, replay protection,
+  stale-write conflict, and log-safety checks passed.
+- **FAILURE:** No release-critical failure observed.
+- **IMPACT:** None observed.
+- **REMAINING ACTION:** Continue adversarial expansion as providers and routes
+  evolve.
 
-## 13. Known Limitations
+### G4 — Core Application Workflow
 
-1. The complete CareIntel workflow is not executable end to end.
-2. There is no encounter API.
-3. Structuring, reviewer, escalation, referral, handoff, and acknowledgement APIs are incomplete and return `501 NOT_IMPLEMENTED`.
-4. Processing, retrieval, AI, and workflow Celery business bodies explicitly fail rather than perform the planned work.
-5. The transactional outbox lacks a hosted dispatcher/replay process and dispatch occurs before its status commit.
-6. The no-op content scanner never declares uploaded content clean; there is no real malware/active-content scanner.
-7. The deterministic AI safety suite currently enforces provenance integrity only; comprehensive prohibited clinical content rules are absent.
-8. Cross-case/cross-facility checks were not exhaustively executed for every evidence, draft, referral, and audit resource.
-9. Database-level audit immutability is absent; direct UPDATE and DELETE were accepted in rollback-only drills.
-10. Full audit reconstruction from authentication through acknowledgement is impossible because later workflow stages are unavailable.
-11. Provider failure, timeout, rate-limit, retry, and live duplicate-delivery matrices are incomplete.
-12. Diarization, broad OCR, multilingual, noisy/silent audio, and code-switching fixtures are incomplete or not verified.
-13. The latest readiness rerun hung during external Blob initialization; startup lacks demonstrated bounded timeout/recovery for that condition.
-14. Metrics and distributed tracing were not demonstrated.
-15. Performance samples are small, sequential, and not suitable for capacity or SLA claims.
-16. Applied migration files are intentionally left outside the active formatting pass.
+- **STATUS:** PASS
+- **EVIDENCE:** Full live-database application workflow persisted processing,
+  structuring, timeline, missing information, hybrid retrieval, AI validation,
+  provenance, review, and audit state.
+- **FAILURE:** No release-critical failure observed.
+- **IMPACT:** None observed.
+- **REMAINING ACTION:** None for the verified release path.
 
-## 14. Final Verification Summary
+### G5 — Async Workflow / Execution
 
-### Test counts
+- **STATUS:** PASS
+- **EVIDENCE:** Transactional outbox creation/claim/dispatch/replay, real
+  Redis/Celery worker execution, database task state, retry bounds, stale
+  recovery, causation, and duplicate-delivery idempotency passed.
+- **FAILURE:** No release-critical failure observed.
+- **IMPACT:** None observed.
+- **REMAINING ACTION:** No disruptive shared-Redis outage drill was performed.
 
-- Primary isolated pytest collection: 195 outcomes — 192 passed, 3 skipped, 0 failed.
-- The three external/live tests skipped by the isolated suite were subsequently executed with opt-in flags and passed.
-- Live integration command: 4 passed; this includes two tests also present in the isolated run.
-- Live E2E command: 1 passed, but it is a deliberately partial case/outbox/audit scenario.
-- Coverage: 71.92% across the measured package.
+### G6 — Human Review / Handoff
 
-### Failed or non-passing verification
+- **STATUS:** PASS
+- **EVIDENCE:** Queue, assignment, workspace evidence/provenance visibility,
+  draft acceptance, explicit human decision, authorization, optimistic locking,
+  referral package, send, acknowledgement, completion, and audit passed.
+- **FAILURE:** No release-critical failure observed.
+- **IMPACT:** None observed.
+- **REMAINING ACTION:** None for the verified release path.
 
-- Whole-repository format check: FAIL on five historical applied migration files.
-- Diarization: NOT VERIFIED with the single-speaker fixture.
-- Audit database UPDATE prevention: FAIL.
-- Audit database DELETE prevention: FAIL.
-- Latest runtime readiness rerun: did not complete; operator-terminated after approximately 150 seconds.
-- Complete golden E2E, human review/handoff, business Celery workflow, outbox recovery, and audit reconstruction: NOT VERIFIED or FAIL as classified above.
+### G7 — Full E2E / Release Evidence
 
-No skipped or unexecuted item is counted as a pass.
+- **STATUS:** PASS
+- **EVIDENCE:** The deterministic full workflow, independent real async path,
+  configured external integrations, readiness/route checks, audit
+  reconstruction, static validation, and concise regression check passed.
+- **FAILURE:** No release-critical failure observed.
+- **IMPACT:** None observed.
+- **REMAINING ACTION:** Treat the scope limitations below as follow-up
+  verification, not as hidden passes.
 
-## 15. Release Decision
+## 11. API, performance, and resource-safety review
 
-**RELEASE BLOCKED**
+- Runtime OpenAPI generation passed with 51 paths and no duplicate/debug route.
+- Missing and malformed JWTs were rejected at the live application boundary.
+- Liveness is local; readiness reports PostgreSQL, Redis, and Blob dependency
+  health with bounded probes.
+- Critical queue, audit, review, handoff, status, idempotency, knowledge-filter,
+  and vector-retrieval paths have intentional indexes through migration `0013`.
+- Async payloads use identifiers and safe metadata rather than raw documents,
+  transcripts, credentials, or tokens.
+- Provider calls use explicit timeouts; retries are bounded and distinguish
+  retryable from permanent failures.
+- No demonstrated release-path N+1 query, unbounded result load, repeated AI or
+  embedding call, or fake 202/task-completion path remained.
+- Blob objects remain private and original evidence is distinct from derived
+  artifacts.
 
-The repository is materially safer and more truthful than its starting state: authentication/consent/facility checks were hardened, schema drift was removed, real infrastructure and provider probes succeeded in several areas, fake HTTP/worker success was eliminated, logging was sanitized, production provider fallback now fails closed, and the primary suite passes.
+No load test or capacity benchmark was executed. This evidence makes no
+throughput, concurrency, availability, or clinical SLA claim.
 
-Release remains blocked because the required authoritative workflow is not operational: async business tasks and outbox recovery are incomplete; reviewer approval, escalation, referral, and acknowledgement are not exposed as executable application paths; the full synthetic golden path and audit reconstruction cannot run; database-level audit mutation is allowed; the safety policy is incomplete; and repeatable readiness under an external Blob delay was not demonstrated.
+## 12. Known limitations and not-verified items
 
-This evidence does not support a “production ready” claim.
+1. Multi-speaker separation was not measured; the executed diarization fixture
+   contains one synthetic speaker, though the configured adapter returned an
+   actual speaker label.
+2. OCR was executed against a native PDF with page provenance. Scanned,
+   table-bearing, poor-quality, and unreadable document fixtures were not rerun
+   during R8.
+3. Noisy, silent, multilingual, and code-switched audio matrices were not run.
+4. The full E2E uses deterministic provider adapters for repeatability; real
+   Azure providers were verified separately rather than invoked repeatedly from
+   the 456-second workflow.
+5. The E2E seeds initial synthetic evidence/input records, then uses actual
+   application services for processing through completion. Intake validation
+   and real Blob storage are covered by separate tests/probes.
+6. Destructive database, Redis interruption, worker-process crash, and shared
+   external-service outage drills were not performed against managed resources.
+7. No statistically meaningful load, concurrency, capacity, or endurance test
+   was performed.
+8. Log-safety verification covers structured-log tests and executed outputs; it
+   is not a formal privacy/compliance certification or exhaustive production
+   sink audit.
+9. Historical migration formatting issues remain intentionally untouched.
+
+None of these items produced a failure in the release-critical verified path.
+They must not be represented as independently verified capabilities.
+
+## 13. R8 corrective changes
+
+R8 made only evidence-backed corrections discovered during validation:
+
+- increased the bounded readiness probe default from 5 to 30 seconds because
+  the real managed database exceeded 5 seconds;
+- made health-route log suppression independent of the router mount prefix;
+- changed Azure diarization requests from `json` to `diarized_json` while
+  preserving standard STT `json` responses;
+- added request-format regression coverage;
+- strengthened the full synthetic workflow's reviewer-workspace, source
+  visibility, cross-facility authorization, trace-context, and audit
+  reconstruction assertions;
+- reformatted one pre-existing test statement.
+
+No migration was added or changed during R8.
+
+## 14. Release decision
+
+**RELEASE READY**
+
+All release-critical G0-G7 gates passed using executed evidence. The current
+repository demonstrates the authoritative PostgreSQL workflow from synthetic
+authentication and consent through processing, retrieval, bounded AI,
+deterministic validation, real outbox/Celery execution, human approval,
+referral, recipient acknowledgement, completion, and audit reconstruction.
+
+This decision is limited to the verified configuration and workflows recorded
+above. It is not a certification, does not eliminate the known limitations, and
+does not turn unexecuted fixture matrices or capacity claims into passes.

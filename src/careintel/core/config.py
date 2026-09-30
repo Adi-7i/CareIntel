@@ -99,7 +99,7 @@ class Settings(BaseSettings):
         description="Maximum seconds allowed for one external dependency connection.",
     )
     readiness_timeout_seconds: Annotated[float, Field(ge=0.1, le=30)] = Field(
-        default=5.0,
+        default=30.0,
         description="Maximum seconds allowed for each readiness dependency probe.",
     )
     database_echo_sql: bool = Field(

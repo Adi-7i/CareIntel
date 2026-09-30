@@ -112,7 +112,8 @@ class CorrelationIDMiddleware(BaseHTTPMiddleware):
         response.headers[REQUEST_ID_HEADER] = request_id
         route = request.scope.get("route")
         route_template = getattr(route, "path", "unmatched")
-        if route_template not in {"/api/v1/health/live", "/api/v1/health/ready"}:
+        is_health_route = route_template.endswith(("/health/live", "/health/ready"))
+        if not is_health_route:
             logger.info(
                 "HTTP request completed",
                 extra={

@@ -73,9 +73,7 @@ async def test_audit_is_append_only_and_trace_metadata_is_sanitized(settings: Se
                 await session.execute(text(statement), {"audit_id": audit_id})
             await savepoint.rollback()
 
-        persisted = await session.scalar(
-            select(AuditLogORM).where(AuditLogORM.id == audit_id)
-        )
+        persisted = await session.scalar(select(AuditLogORM).where(AuditLogORM.id == audit_id))
         assert persisted is not None
         assert persisted.outcome == "SUCCESS"
     finally:

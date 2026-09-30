@@ -53,9 +53,11 @@ class AzureSpeechProvider(SpeechProvider):
             "api-key": self._api_key,
         }
 
-        # Determine format based on mode
         data = {
-            "response_format": "json",
+            # The diarization deployment only includes speaker annotations in
+            # its dedicated response shape. Standard transcription keeps the
+            # existing JSON contract.
+            "response_format": "diarized_json" if self._mode == "diarize" else "json",
         }
 
         async with httpx.AsyncClient(timeout=300.0) as client:
