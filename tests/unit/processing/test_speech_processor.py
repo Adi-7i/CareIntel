@@ -50,7 +50,7 @@ def evidence() -> EvidenceORM:
 @pytest.fixture
 def mocks() -> dict[str, AsyncMock]:
     return {
-        "evidence_repo": AsyncMock(),
+        "access_guard": AsyncMock(),
         "processing_repo": AsyncMock(),
         "outbox_repo": AsyncMock(),
         "blob_storage": AsyncMock(),
@@ -68,7 +68,7 @@ def processor(mocks: dict[str, AsyncMock]) -> SpeechProcessor:
     )
     return SpeechProcessor(
         settings=settings,
-        evidence_repo=mocks["evidence_repo"],
+        access_guard=mocks["access_guard"],
         processing_repo=mocks["processing_repo"],
         outbox_repo=mocks["outbox_repo"],
         blob_storage=mocks["blob_storage"],
@@ -83,7 +83,7 @@ async def test_process_success(
     evidence: EvidenceORM,
     user: UserContext,
 ) -> None:
-    mocks["evidence_repo"].get_by_id.return_value = evidence
+    mocks["access_guard"].require_ready_evidence.return_value = evidence
     mocks["processing_repo"].get_run_by_idempotency_key.return_value = None
 
     async def async_generator() -> AsyncGenerator[bytes, None]:
@@ -111,7 +111,7 @@ async def test_process_invalid_modality(
     user: UserContext,
 ) -> None:
     evidence.modality = EvidenceModality.DOCUMENT.value
-    mocks["evidence_repo"].get_by_id.return_value = evidence
+    mocks["access_guard"].require_ready_evidence.return_value = evidence
 
     with pytest.raises(CareIntelError):
         await processor.process(evidence.id, user, "corr-1")

@@ -19,6 +19,7 @@ class AsyncTaskORM(Base):
     """
     Durable execution identity for asynchronous background tasks.
     """
+
     __tablename__ = "async_tasks"
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -27,7 +28,9 @@ class AsyncTaskORM(Base):
         server_default=text("gen_random_uuid()"),
     )
     task_type: Mapped[str] = mapped_column(String, nullable=False)
-    task_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    task_version: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=1, server_default=text("1")
+    )
 
     # SHA-256 of (task_type + entity_id + case_id + config)
     idempotency_key: Mapped[str] = mapped_column(String, nullable=False)
@@ -48,10 +51,16 @@ class AsyncTaskORM(Base):
     causation_id: Mapped[str | None] = mapped_column(String, nullable=True)
 
     # PENDING, QUEUED, RUNNING, SUCCEEDED, FAILED, CANCELLED
-    status: Mapped[str] = mapped_column(String, nullable=False, default="PENDING")
+    status: Mapped[str] = mapped_column(
+        String, nullable=False, default="PENDING", server_default=text("'PENDING'")
+    )
 
-    attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    max_attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=3)
+    attempt_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
+    max_attempts: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=3, server_default=text("3")
+    )
     celery_task_id: Mapped[str | None] = mapped_column(String, nullable=True)
 
     payload_json: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)

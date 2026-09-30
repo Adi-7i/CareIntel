@@ -16,18 +16,22 @@ class ReviewStateMachine:
     _VALID_TRANSITIONS: ClassVar[dict[ReviewQueueStatus, frozenset[ReviewQueueStatus]]] = {
         ReviewQueueStatus.PENDING_ASSIGNMENT: frozenset({ReviewQueueStatus.ASSIGNED}),
         ReviewQueueStatus.ASSIGNED: frozenset({ReviewQueueStatus.IN_REVIEW}),
-        ReviewQueueStatus.IN_REVIEW: frozenset({
-            ReviewQueueStatus.CLARIFICATION_PENDING,
-            ReviewQueueStatus.REVIEW_COMPLETE,
-            ReviewQueueStatus.ESCALATED,
-        }),
+        ReviewQueueStatus.IN_REVIEW: frozenset(
+            {
+                ReviewQueueStatus.CLARIFICATION_PENDING,
+                ReviewQueueStatus.REVIEW_COMPLETE,
+                ReviewQueueStatus.ESCALATED,
+            }
+        ),
         ReviewQueueStatus.CLARIFICATION_PENDING: frozenset({ReviewQueueStatus.IN_REVIEW}),
         ReviewQueueStatus.ESCALATED: frozenset({ReviewQueueStatus.IN_REVIEW}),
         ReviewQueueStatus.REVIEW_COMPLETE: frozenset(),
     }
 
     @classmethod
-    def validate_transition(cls, from_state: ReviewQueueStatus | str, to_state: ReviewQueueStatus | str) -> None:
+    def validate_transition(
+        cls, from_state: ReviewQueueStatus | str, to_state: ReviewQueueStatus | str
+    ) -> None:
         """
         Validate if the transition from `from_state` to `to_state` is allowed.
         Raises InvalidTransitionError if it is not.

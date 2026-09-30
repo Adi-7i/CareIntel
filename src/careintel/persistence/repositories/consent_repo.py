@@ -43,8 +43,13 @@ class ConsentRepository:
     ) -> ConsentORM:
         """Create a new consent record and its initial event."""
         self.session.add(consent)
+        # ConsentEventORM deliberately has no ORM relationship to ConsentORM, so
+        # SQLAlchemy cannot infer the foreign-key insert order from the unit of
+        # work. Persist the parent first while keeping both writes in the same
+        # caller-owned transaction.
+        await self.session.flush([consent])
         self.session.add(event)
-        await self.session.flush()
+        await self.session.flush([event])
         return consent
 
     async def add_event(self, event: ConsentEventORM) -> ConsentEventORM:

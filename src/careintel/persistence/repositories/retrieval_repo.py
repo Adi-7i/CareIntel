@@ -9,7 +9,7 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from careintel.persistence.models.retrieval import RetrievalCandidateORM, RetrievalRunORM
@@ -54,11 +54,31 @@ class RetrievalRepository:
         )
         return result.scalar_one_or_none()
 
+    async def list_runs_for_case(self, case_id: uuid.UUID) -> list[RetrievalRunORM]:
+        result = await self._session.execute(
+            select(RetrievalRunORM)
+            .where(RetrievalRunORM.case_id == case_id)
+            .order_by(RetrievalRunORM.created_at.desc())
+        )
+        return list(result.scalars().all())
+
     async def create_run(self, data: dict[str, Any]) -> RetrievalRunORM:
         orm = RetrievalRunORM(**data)
         self._session.add(orm)
         await self._session.flush()
         return orm
+
+    async def update_run(self, run_id: uuid.UUID, data: dict[str, Any]) -> None:
+        await self._session.execute(
+            update(RetrievalRunORM).where(RetrievalRunORM.id == run_id).values(**data)
+        )
+        await self._session.flush()
+
+    async def delete_candidates_for_run(self, run_id: uuid.UUID) -> None:
+        await self._session.execute(
+            delete(RetrievalCandidateORM).where(RetrievalCandidateORM.retrieval_run_id == run_id)
+        )
+        await self._session.flush()
 
     async def create_candidates(
         self, data_list: list[dict[str, Any]]

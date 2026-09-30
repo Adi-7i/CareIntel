@@ -9,8 +9,9 @@ from typing import Protocol
 @dataclass(frozen=True)
 class TTSResult:
     """Standardized Text-to-Speech output."""
+
     audio_bytes: bytes
-    audio_format: str      # e.g., "mp3", "wav", "opus"
+    audio_format: str  # e.g., "mp3", "wav", "opus"
     provider: str
     model: str
     voice: str

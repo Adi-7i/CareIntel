@@ -4,12 +4,15 @@ from unittest import mock
 from careintel.core.config import Settings
 
 
-@mock.patch.dict(os.environ, {
-    "APP_ENV": "development",
-    "DATABASE_URL": "postgresql+asyncpg://postgres:postgres@localhost:5432/postgres",
-    "SECRET_KEY": "test",
-    "REDIS_URL": "redis://test-redis:6379/2"
-})
+@mock.patch.dict(
+    os.environ,
+    {
+        "APP_ENV": "development",
+        "DATABASE_URL": "postgresql+asyncpg://postgres:postgres@localhost:5432/postgres",
+        "SECRET_KEY": "test",
+        "REDIS_URL": "redis://test-redis:6379/2",
+    },
+)
 def test_celery_broker_prefers_redis_url():
     """Verify that if REDIS_URL is provided, it is used as the broker."""
     # We must instantiate Settings directly to capture the mocked environ,
@@ -26,13 +29,16 @@ def test_celery_broker_prefers_redis_url():
     assert broker_url == "redis://test-redis:6379/2"
 
 
-@mock.patch.dict(os.environ, {
-    "APP_ENV": "development",
-    "DATABASE_URL": "postgresql+asyncpg://postgres:postgres@localhost:5432/postgres",
-    "SECRET_KEY": "test",
-    "CELERY_BROKER_URL": "redis://localhost:6379/1",
-    "REDIS_URL": ""
-})
+@mock.patch.dict(
+    os.environ,
+    {
+        "APP_ENV": "development",
+        "DATABASE_URL": "postgresql+asyncpg://postgres:postgres@localhost:5432/postgres",
+        "SECRET_KEY": "test",
+        "CELERY_BROKER_URL": "redis://localhost:6379/1",
+        "REDIS_URL": "",
+    },
+)
 def test_celery_broker_falls_back_to_celery_broker_url():
     """Verify that if REDIS_URL is missing, it falls back to CELERY_BROKER_URL."""
     # Ensure REDIS_URL is explicitly clear

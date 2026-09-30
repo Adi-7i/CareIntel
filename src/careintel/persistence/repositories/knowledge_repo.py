@@ -42,9 +42,7 @@ class KnowledgeRepository:
         )
         return result.scalar_one_or_none()
 
-    async def update_source_status(
-        self, source_id: uuid.UUID, status: str
-    ) -> None:
+    async def update_source_status(self, source_id: uuid.UUID, status: str) -> None:
         await self._session.execute(
             update(KnowledgeSourceORM)
             .where(KnowledgeSourceORM.id == source_id)
@@ -78,17 +76,13 @@ class KnowledgeRepository:
 
     # ── Knowledge Chunks ──────────────────────────────────────────────────────
 
-    async def create_chunks(
-        self, chunks: list[dict[str, Any]]
-    ) -> list[KnowledgeChunkORM]:
+    async def create_chunks(self, chunks: list[dict[str, Any]]) -> list[KnowledgeChunkORM]:
         orm_chunks = [KnowledgeChunkORM(**c) for c in chunks]
         self._session.add_all(orm_chunks)
         await self._session.flush()
         return orm_chunks
 
-    async def get_chunks_for_version(
-        self, version_id: uuid.UUID
-    ) -> list[KnowledgeChunkORM]:
+    async def get_chunks_for_version(self, version_id: uuid.UUID) -> list[KnowledgeChunkORM]:
         result = await self._session.execute(
             select(KnowledgeChunkORM)
             .where(KnowledgeChunkORM.version_id == version_id)
@@ -102,11 +96,30 @@ class KnowledgeRepository:
         )
         return result.scalar_one_or_none()
 
+    async def get_published_chunks(
+        self,
+        chunk_ids: list[uuid.UUID],
+        corpus_version: str,
+    ) -> list[tuple[KnowledgeChunkORM, KnowledgeVersionORM, KnowledgeSourceORM]]:
+        """Return only active chunks from a published, pinned corpus version."""
+        if not chunk_ids:
+            return []
+        result = await self._session.execute(
+            select(KnowledgeChunkORM, KnowledgeVersionORM, KnowledgeSourceORM)
+            .join(KnowledgeVersionORM, KnowledgeVersionORM.id == KnowledgeChunkORM.version_id)
+            .join(KnowledgeSourceORM, KnowledgeSourceORM.id == KnowledgeVersionORM.source_id)
+            .where(
+                KnowledgeChunkORM.id.in_(chunk_ids),
+                KnowledgeChunkORM.status == "ACTIVE",
+                KnowledgeVersionORM.corpus_version == corpus_version,
+                KnowledgeSourceORM.publication_status == "PUBLISHED",
+            )
+        )
+        return list(result.tuples().all())
+
     # ── Embedding Versions ────────────────────────────────────────────────────
 
-    async def get_or_create_embedding_version(
-        self, data: dict[str, Any]
-    ) -> EmbeddingVersionORM:
+    async def get_or_create_embedding_version(self, data: dict[str, Any]) -> EmbeddingVersionORM:
         """Idempotent: returns existing version if version_key already exists."""
         existing = await self._session.execute(
             select(EmbeddingVersionORM).where(
@@ -121,21 +134,15 @@ class KnowledgeRepository:
         await self._session.flush()
         return orm
 
-    async def get_embedding_version_by_key(
-        self, version_key: str
-    ) -> EmbeddingVersionORM | None:
+    async def get_embedding_version_by_key(self, version_key: str) -> EmbeddingVersionORM | None:
         result = await self._session.execute(
-            select(EmbeddingVersionORM).where(
-                EmbeddingVersionORM.version_key == version_key
-            )
+            select(EmbeddingVersionORM).where(EmbeddingVersionORM.version_key == version_key)
         )
         return result.scalar_one_or_none()
 
     # ── Chunk Embeddings ──────────────────────────────────────────────────────
 
-    async def create_chunk_embedding(
-        self, data: dict[str, Any]
-    ) -> ChunkEmbeddingORM:
+    async def create_chunk_embedding(self, data: dict[str, Any]) -> ChunkEmbeddingORM:
         """
         Persist a chunk embedding record.
 

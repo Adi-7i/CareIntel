@@ -32,7 +32,7 @@ class TextToSpeechRequest(BaseModel):
             },
             "description": "The generated audio file.",
         }
-    }
+    },
 )
 async def synthesize_speech(
     request: TextToSpeechRequest,

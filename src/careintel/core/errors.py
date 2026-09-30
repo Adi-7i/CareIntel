@@ -41,6 +41,12 @@ from careintel.core.correlation import get_correlation_id
 logger = logging.getLogger(__name__)
 
 
+def _route_template(request: Request) -> str:
+    """Return the registered route template without logging object identifiers."""
+    route = request.scope.get("route")
+    return str(getattr(route, "path", "unmatched"))
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Domain / Application exceptions (no FastAPI dependency)
 # ──────────────────────────────────────────────────────────────────────────────
@@ -137,6 +143,14 @@ class ServiceUnavailableError(CareIntelError):
     message = "A required service is temporarily unavailable. Please try again later."
 
 
+class CapabilityNotImplementedError(CareIntelError):
+    """A deliberately exposed contract has no safe persisted implementation yet."""
+
+    code = "CAPABILITY_NOT_IMPLEMENTED"
+    http_status = 501
+    message = "This capability is not implemented in the current release."
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Evidence Exceptions
 # ──────────────────────────────────────────────────────────────────────────────
@@ -225,7 +239,7 @@ async def _handle_careintel_error(
             "error_code": exc.code,
             "http_status": exc.http_status,
             "correlation_id": get_correlation_id(),
-            "path": request.url.path,
+            "route": _route_template(request),
         },
     )
     return _error_response(
@@ -250,9 +264,8 @@ async def _handle_http_exception(
         "HTTP exception",
         extra={
             "http_status": exc.status_code,
-            "detail": str(exc.detail),
             "correlation_id": get_correlation_id(),
-            "path": request.url.path,
+            "route": _route_template(request),
         },
     )
     return _error_response(
@@ -274,7 +287,7 @@ async def _handle_validation_error(
         extra={
             "error_count": error_count,
             "correlation_id": get_correlation_id(),
-            "path": request.url.path,
+            "route": _route_template(request),
         },
     )
     return _error_response(
@@ -290,12 +303,12 @@ async def _handle_unhandled_exception(
     exc: Exception,
 ) -> JSONResponse:
     """Catch-all handler for unexpected exceptions."""
-    logger.exception(
+    logger.error(
         "Unhandled exception",
         extra={
             "exc_type": type(exc).__name__,
             "correlation_id": get_correlation_id(),
-            "path": request.url.path,
+            "route": _route_template(request),
         },
     )
     return _error_response(

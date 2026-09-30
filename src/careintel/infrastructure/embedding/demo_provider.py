@@ -14,7 +14,7 @@ IMPORTANT:
 The demo vector is computed from a hash of the input text, ensuring:
 - Same input → same output (deterministic)
 - Different inputs → different outputs (not all-zeros)
-- Correct dimension (768 by default)
+- Correct persisted pgvector dimension (1536)
 - Values in a plausible float range (-1.0 to 1.0)
 """
 
@@ -28,9 +28,9 @@ from careintel.infrastructure.embedding.port import EmbeddingProvider, Embedding
 
 # Demo configuration constants
 _DEMO_PROVIDER = "demo"
-_DEMO_MODEL = "demo-fixed-768"
-_DEMO_DIMENSION = 768
-_DEMO_VERSION_KEY = "demo-fixed-768-v1"
+_DEMO_MODEL = "demo-fixed-1536"
+_DEMO_DIMENSION = 1536
+_DEMO_VERSION_KEY = "demo-fixed-1536-v1"
 
 
 class DemoEmbeddingProvider:
@@ -55,7 +55,7 @@ class DemoEmbeddingProvider:
         Compute a deterministic embedding for the given text.
 
         The implementation uses repeated SHA-256 hashing to generate
-        768 float32 values, then normalizes to unit length.
+        1536 float32 values, then normalizes to unit length.
         """
         vector = self._deterministic_vector(text)
         return EmbeddingResult(

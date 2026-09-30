@@ -75,12 +75,10 @@ class RRFFusion:
         """
         # Build lookup maps: chunk_id → (rank_1_based, score)
         dense_map: dict[uuid.UUID, tuple[int, float]] = {
-            r.chunk_id: (i + 1, r.dense_score)
-            for i, r in enumerate(dense_results)
+            r.chunk_id: (i + 1, r.dense_score) for i, r in enumerate(dense_results)
         }
         sparse_map: dict[uuid.UUID, tuple[int, float]] = {
-            r.chunk_id: (i + 1, r.sparse_score)
-            for i, r in enumerate(sparse_results)
+            r.chunk_id: (i + 1, r.sparse_score) for i, r in enumerate(sparse_results)
         }
 
         all_ids: set[uuid.UUID] = set(dense_map) | set(sparse_map)

@@ -20,6 +20,7 @@ def user() -> UserContext:
         is_active=True,
         roles={"doctor"},
         permissions={"processing:write"},
+        role_facilities={"doctor": None},
     )
 
 
@@ -32,7 +33,12 @@ def mocks() -> dict[str, AsyncMock]:
         "ext_processor": AsyncMock(),
         "task_service": AsyncMock(),
         "evidence_repo": AsyncMock(),
+        "case_repo": AsyncMock(),
         "outbox_repo": AsyncMock(),
+        "processing_repo": AsyncMock(),
+        "text_repo": AsyncMock(),
+        "audit_repo": AsyncMock(),
+        "access_guard": AsyncMock(),
     }
 
 
@@ -45,7 +51,12 @@ def service(mocks: dict[str, AsyncMock]) -> ProcessingService:
         extraction_processor=mocks["ext_processor"],
         task_service=mocks["task_service"],
         evidence_repo=mocks["evidence_repo"],
+        case_repo=mocks["case_repo"],
         outbox_repo=mocks["outbox_repo"],
+        processing_repo=mocks["processing_repo"],
+        text_repo=mocks["text_repo"],
+        audit_repo=mocks["audit_repo"],
+        access_guard=mocks["access_guard"],
     )
 
 
@@ -89,11 +100,6 @@ async def test_trigger_language_norm(
     mocks["task_service"].get_or_create_task.assert_called_once()
 
 
-@pytest.mark.asyncio
-async def test_trigger_unsupported(
-    service: ProcessingService, user: UserContext
-) -> None:
-    # Phase 8 changes means we no longer raise CareIntelError for unsupported processors synchronously
-    # Instead, the task handles it or it defaults to run_processing.
-    # The previous test asserted a CareIntelError. We can either remove it or update it.
-    pass
+def test_unsupported_processor_type_rejected() -> None:
+    with pytest.raises(ValueError):
+        ProcessorType("unsupported")

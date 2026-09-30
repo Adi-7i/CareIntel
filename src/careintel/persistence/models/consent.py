@@ -7,7 +7,7 @@ from __future__ import annotations
 import datetime
 import uuid
 
-from sqlalchemy import ForeignKey, Index, String, UniqueConstraint, text
+from sqlalchemy import DateTime, ForeignKey, Index, String, UniqueConstraint, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -31,11 +31,16 @@ class ConsentORM(Base):
     notice_version: Mapped[str] = mapped_column(String, nullable=False)
     state: Mapped[str] = mapped_column(String, nullable=False)
     requested_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True),
         server_default=text("now()"),
         nullable=False,
     )
-    captured_at: Mapped[datetime.datetime | None] = mapped_column(nullable=True)
-    withdrawn_at: Mapped[datetime.datetime | None] = mapped_column(nullable=True)
+    captured_at: Mapped[datetime.datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    withdrawn_at: Mapped[datetime.datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     captured_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("users.id"),
@@ -70,6 +75,7 @@ class ConsentEventORM(Base):
         nullable=True,
     )
     occurred_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True),
         server_default=text("now()"),
         nullable=False,
     )

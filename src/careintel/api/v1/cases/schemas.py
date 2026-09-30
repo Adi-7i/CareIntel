@@ -54,3 +54,24 @@ class CaseStateHistoryEntry(BaseModel):
 class CaseHistoryResponse(BaseModel):
     case_id: uuid.UUID
     history: list[CaseStateHistoryEntry]
+
+
+class CreateEncounterRequest(BaseModel):
+    encounter_type: str = Field(min_length=1, max_length=100)
+    occurred_at: datetime.datetime
+    notes: str | None = Field(default=None, max_length=2000)
+
+
+class EncounterResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    encounter_id: uuid.UUID
+    case_id: uuid.UUID
+    encounter_type: str
+    occurred_at: datetime.datetime
+    notes: str | None
+
+
+class EncounterListResponse(BaseModel):
+    case_id: uuid.UUID
+    encounters: list[EncounterResponse]

@@ -18,6 +18,7 @@ class LLMResult:
     """
     Standardized output from an LLM provider.
     """
+
     raw_response: str
     parsed_content: dict[str, object] | None
     finish_reason: str
@@ -27,6 +28,7 @@ class LLMResult:
 
 class LLMProviderError(Exception):
     """Base exception for LLM provider failures."""
+
     pass
 
 

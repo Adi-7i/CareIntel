@@ -32,3 +32,7 @@ class BlobStoragePort(Protocol):
     async def generate_sas_url(self, key: str, ttl_seconds: int) -> str:
         """Generate a secure, short-lived download URL."""
         ...
+
+    async def close(self) -> None:
+        """Release network resources held by the provider."""
+        ...

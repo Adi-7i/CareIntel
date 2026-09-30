@@ -44,9 +44,12 @@ class AuthorizationPolicy:
         if facility_scope is not None:
             has_facility_access = False
             for role_name in actor.roles:
-                # In a real app we'd map which permissions came from which roles.
-                # For Phase 2, if the user has ANY system-wide role, or a role matching
-                # the facility, we grant it.
+                # A missing mapping is not a system-wide grant.  System-wide access
+                # must be represented explicitly by a role mapping whose value is
+                # None; otherwise an incompletely hydrated UserContext would bypass
+                # the facility boundary.
+                if role_name not in actor.role_facilities:
+                    continue
                 role_facility = actor.role_facilities.get(role_name)
 
                 if role_facility is None or role_facility == facility_scope:

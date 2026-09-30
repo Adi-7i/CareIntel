@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import datetime
 import uuid
+from typing import Any
 
 from sqlalchemy import ForeignKey, Index, Integer, String, Text, UniqueConstraint, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
@@ -27,6 +28,11 @@ class ReviewQueueItemORM(Base):
         ForeignKey("cases.id", ondelete="CASCADE"),
         nullable=False,
         unique=True,
+    )
+    encounter_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("encounters.id", ondelete="SET NULL"),
+        nullable=True,
     )
     status: Mapped[str] = mapped_column(String, nullable=False)
     assigned_reviewer_id: Mapped[uuid.UUID | None] = mapped_column(
@@ -60,6 +66,12 @@ class ReviewQueueItemORM(Base):
 
     __table_args__ = (
         Index("ix_review_queue_status_priority", "status", "priority_bucket", "entered_queue_at"),
+        Index(
+            "ix_review_queue_assignee_status",
+            "assigned_reviewer_id",
+            "status",
+            "entered_queue_at",
+        ),
         # Partial index for unassigned items
         Index(
             "ix_review_queue_unassigned",
@@ -87,6 +99,12 @@ class ReviewDecisionORM(Base):
         ForeignKey("users.id"),
         nullable=False,
     )
+    draft_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("ai_drafts.id", ondelete="RESTRICT"),
+        nullable=True,
+    )
+    draft_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
     decision_type: Mapped[str] = mapped_column(String, nullable=False)
     rationale: Mapped[str | None] = mapped_column(Text, nullable=True)
     case_version: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -95,7 +113,10 @@ class ReviewDecisionORM(Base):
         server_default=text("now()"), nullable=False
     )
 
-    __table_args__ = (Index("ix_review_decisions_case", "case_id"),)
+    __table_args__ = (
+        Index("ix_review_decisions_case", "case_id"),
+        UniqueConstraint("case_id", "case_version", name="uq_review_decisions_case_version"),
+    )
 
 
 class ReviewerNoteORM(Base):
@@ -129,8 +150,12 @@ class ReviewerNoteORM(Base):
 
     __table_args__ = (
         Index("ix_reviewer_notes_case", "case_id"),
-        # Only one active note per case (where superseded_by IS NULL)
-        UniqueConstraint("case_id", name="uq_reviewer_notes_active", postgresql_where=text("superseded_by IS NULL")),
+        Index(
+            "uq_reviewer_notes_active",
+            "case_id",
+            unique=True,
+            postgresql_where=text("superseded_by IS NULL"),
+        ),
     )
 
 
@@ -152,8 +177,8 @@ class DraftEditVersionORM(Base):
         ForeignKey("users.id"),
         nullable=False,
     )
-    original_content_json: Mapped[dict] = mapped_column(JSONB, nullable=False)
-    edited_content_json: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    original_content_json: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    edited_content_json: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     edit_rationale: Mapped[str | None] = mapped_column(Text, nullable=True)
     content_origin: Mapped[str] = mapped_column(String, nullable=False)
     correlation_id: Mapped[str] = mapped_column(String, nullable=False)
@@ -196,4 +221,12 @@ class EscalationRecordORM(Base):
         server_default=text("now()"), nullable=False
     )
 
-    __table_args__ = (Index("ix_escalation_records_case", "case_id"),)
+    __table_args__ = (
+        Index("ix_escalation_records_case", "case_id"),
+        Index(
+            "uq_escalation_records_open_case",
+            "case_id",
+            unique=True,
+            postgresql_where=text("status = 'OPEN'"),
+        ),
+    )

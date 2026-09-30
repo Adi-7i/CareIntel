@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import datetime
 import uuid
+from typing import Any
 
 from sqlalchemy import Boolean, ForeignKey, Index, Integer, String, Text, UniqueConstraint, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
@@ -24,7 +25,9 @@ class RecipientORM(Base):
     )
     name: Mapped[str] = mapped_column(String, nullable=False)
     recipient_type: Mapped[str] = mapped_column(String, nullable=False)
-    config_json: Mapped[dict] = mapped_column(JSONB, server_default=text("'{}'::jsonb"), nullable=False)
+    config_json: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, server_default=text("'{}'::jsonb"), nullable=False
+    )
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     created_at: Mapped[datetime.datetime] = mapped_column(
         server_default=text("now()"), nullable=False
@@ -53,7 +56,7 @@ class ReferralPackageORM(Base):
         ForeignKey("users.id"),
         nullable=False,
     )
-    content_json: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    content_json: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     evidence_ids: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
     status: Mapped[str] = mapped_column(String, nullable=False)
     superseded_by: Mapped[uuid.UUID | None] = mapped_column(
@@ -95,6 +98,7 @@ class HandoffORM(Base):
         ForeignKey("recipients.id"),
         nullable=False,
     )
+    channel: Mapped[str | None] = mapped_column(String, nullable=True)
     status: Mapped[str] = mapped_column(String, nullable=False)
     idempotency_key: Mapped[str] = mapped_column(String, nullable=False, unique=True)
     sent_by: Mapped[uuid.UUID] = mapped_column(
@@ -118,4 +122,7 @@ class HandoffORM(Base):
         server_default=text("now()"), nullable=False
     )
 
-    __table_args__ = (Index("ix_handoffs_case", "case_id"),)
+    __table_args__ = (
+        Index("ix_handoffs_case", "case_id"),
+        Index("ix_handoffs_status_updated", "status", "updated_at"),
+    )

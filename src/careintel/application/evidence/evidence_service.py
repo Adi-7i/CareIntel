@@ -14,6 +14,7 @@ from careintel.application.case.case_service import CaseService
 from careintel.application.evidence.file_validator import FileValidator
 from careintel.core.errors import (
     DuplicateEvidenceError,
+    InvalidTransitionError,
     NotFoundError,
     StorageError,
     UnsupportedFileTypeError,
@@ -24,6 +25,9 @@ from careintel.domain.auth.permissions import Permission
 from careintel.domain.auth.policy import AuthorizationPolicy
 from careintel.domain.case.commands import TransitionCaseCommand
 from careintel.domain.case.states import CaseState
+from careintel.domain.consent.models import ConsentContext
+from careintel.domain.consent.policy import ConsentPolicy
+from careintel.domain.consent.purpose import ConsentPurpose
 from careintel.domain.evidence.commands import (
     RegisterTextEvidenceCommand,
     UploadFileEvidenceCommand,
@@ -43,6 +47,8 @@ from careintel.persistence.models.evidence import (
 )
 from careintel.persistence.repositories.audit_repo import AuditRepository
 from careintel.persistence.repositories.case_repo import CaseRepository
+from careintel.persistence.repositories.consent_repo import ConsentRepository
+from careintel.persistence.repositories.encounter_repo import EncounterRepository
 from careintel.persistence.repositories.evidence_history_repo import EvidenceHistoryRepository
 from careintel.persistence.repositories.evidence_outbox_repo import EvidenceOutboxRepository
 from careintel.persistence.repositories.evidence_repo import EvidenceRepository
@@ -55,6 +61,8 @@ class EvidenceService:
     def __init__(
         self,
         case_repo: CaseRepository,
+        encounter_repo: EncounterRepository,
+        consent_repo: ConsentRepository,
         evidence_repo: EvidenceRepository,
         text_repo: TextContentRepository,
         history_repo: EvidenceHistoryRepository,
@@ -67,6 +75,8 @@ class EvidenceService:
         sas_ttl_minutes: int = 15,
     ) -> None:
         self.case_repo = case_repo
+        self.encounter_repo = encounter_repo
+        self.consent_repo = consent_repo
         self.evidence_repo = evidence_repo
         self.text_repo = text_repo
         self.history_repo = history_repo
@@ -115,6 +125,49 @@ class EvidenceService:
             raise NotFoundError(f"Case {case_id} not found.")
         return case_orm
 
+    async def _require_data_processing_consent(
+        self,
+        consent_id: uuid.UUID,
+        case_orm: CaseORM,
+    ) -> None:
+        """Validate that the supplied consent authorizes this case subject."""
+        consent_orm = await self.consent_repo.get_by_id(consent_id)
+        consent = None
+        if consent_orm is not None:
+            consent = ConsentContext(
+                id=consent_orm.id,
+                subject_id=consent_orm.subject_id,
+                purpose=consent_orm.purpose,
+                notice_version=consent_orm.notice_version,
+                state=consent_orm.state,
+            )
+        ConsentPolicy.require_active(
+            consent=consent,
+            subject_id=case_orm.synthetic_subject_id,
+            purpose=ConsentPurpose.DATA_PROCESSING,
+            required_notice_version="1.0",
+        )
+
+    async def _require_encounter_in_case(
+        self, encounter_id: uuid.UUID | None, case_id: uuid.UUID
+    ) -> None:
+        if encounter_id is None:
+            return
+        if await self.encounter_repo.get_for_case(encounter_id, case_id) is None:
+            raise NotFoundError("Encounter not found for case.")
+
+    @staticmethod
+    def _require_case_accepts_evidence_changes(case_orm: CaseORM) -> None:
+        """Prevent authoritative evidence changes from silently surviving approval."""
+        if case_orm.state in {
+            CaseState.REVIEWED.value,
+            CaseState.REFERRED.value,
+            CaseState.COMPLETED.value,
+        }:
+            raise InvalidTransitionError(
+                "Evidence cannot change after human approval; reopen review first."
+            )
+
     async def _append_audit(
         self,
         event_type: str,
@@ -141,6 +194,9 @@ class EvidenceService:
     ) -> EvidenceAggregate:
         """Register text-based evidence and transition case state if needed."""
         case_orm = await self._get_authorized_case(cmd.case_id, user, Permission.EVIDENCE_WRITE)
+        self._require_case_accepts_evidence_changes(case_orm)
+        await self._require_data_processing_consent(cmd.consent_id, case_orm)
+        await self._require_encounter_in_case(cmd.encounter_id, cmd.case_id)
 
         # Create Evidence ORM
         evidence_orm = EvidenceORM(
@@ -208,7 +264,10 @@ class EvidenceService:
         self, cmd: UploadFileEvidenceCommand, user: UserContext
     ) -> EvidenceAggregate:
         """Start a multipart file upload."""
-        await self._get_authorized_case(cmd.case_id, user, Permission.EVIDENCE_WRITE)
+        case_orm = await self._get_authorized_case(cmd.case_id, user, Permission.EVIDENCE_WRITE)
+        self._require_case_accepts_evidence_changes(case_orm)
+        await self._require_data_processing_consent(cmd.consent_id, case_orm)
+        await self._require_encounter_in_case(cmd.encounter_id, cmd.case_id)
 
         # Validate extension first before doing anything
         sanitized_filename = self.file_validator.validate_extension(cmd.declared_filename)
@@ -246,13 +305,21 @@ class EvidenceService:
         if not evidence_orm:
             raise NotFoundError(f"Evidence {evidence_id} not found.")
 
-        await self._get_authorized_case(evidence_orm.case_id, user, Permission.EVIDENCE_WRITE)
+        case_orm = await self._get_authorized_case(
+            evidence_orm.case_id, user, Permission.EVIDENCE_WRITE
+        )
+        self._require_case_accepts_evidence_changes(case_orm)
 
         if evidence_orm.state != EvidenceState.PENDING_UPLOAD:
             raise UnsupportedFileTypeError("Evidence is not in PENDING_UPLOAD state.")
 
         # 1. Stream and Validate
         sha256, magic_mime, total_size = await self.file_validator.stream_and_validate(file_stream)
+        self.file_validator.validate_mime_consistency(
+            filename=evidence_orm.original_filename or "",
+            declared_mime=evidence_orm.content_type,
+            detected_mime=magic_mime,
+        )
 
         # 2. Check Duplicates
         existing = await self.evidence_repo.get_by_checksum(evidence_orm.case_id, str(sha256))

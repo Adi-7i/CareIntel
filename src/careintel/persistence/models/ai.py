@@ -120,15 +120,16 @@ class AIDraftORM(Base):
         JSONB, server_default=text("'[]'::jsonb"), nullable=False
     )
     # DRAFT, APPROVED, REJECTED (by human reviewer)
-    reviewer_status: Mapped[str] = mapped_column(
-        String, nullable=False, default="DRAFT"
-    )
+    reviewer_status: Mapped[str] = mapped_column(String, nullable=False, default="DRAFT")
     reviewer_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("users.id"),
         nullable=True,
     )
     reviewed_at: Mapped[datetime.datetime | None] = mapped_column(nullable=True)
+    version: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=1, server_default=text("1")
+    )
     created_at: Mapped[datetime.datetime] = mapped_column(
         server_default=text("now()"), nullable=False
     )

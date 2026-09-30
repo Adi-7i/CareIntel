@@ -37,6 +37,14 @@ class HandoffRepository:
     async def get_referral_package(self, package_id: uuid.UUID) -> ReferralPackageORM | None:
         return await self.session.get(ReferralPackageORM, package_id)
 
+    async def get_referral_package_for_update(
+        self, package_id: uuid.UUID
+    ) -> ReferralPackageORM | None:
+        result = await self.session.execute(
+            select(ReferralPackageORM).where(ReferralPackageORM.id == package_id).with_for_update()
+        )
+        return result.scalar_one_or_none()
+
     async def get_packages_for_case(self, case_id: uuid.UUID) -> Sequence[ReferralPackageORM]:
         stmt = (
             select(ReferralPackageORM)
@@ -56,12 +64,28 @@ class HandoffRepository:
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
+    async def get_latest_package_for_update(self, case_id: uuid.UUID) -> ReferralPackageORM | None:
+        result = await self.session.execute(
+            select(ReferralPackageORM)
+            .where(ReferralPackageORM.case_id == case_id)
+            .order_by(ReferralPackageORM.version.desc())
+            .limit(1)
+            .with_for_update()
+        )
+        return result.scalar_one_or_none()
+
     # ── Handoffs ─────────────────────────────────────────────────────────────
 
     async def create_handoff(self, handoff: HandoffORM) -> HandoffORM:
         self.session.add(handoff)
         await self.session.flush()
         return handoff
+
+    async def get_handoff_by_idempotency_key(self, key: str) -> HandoffORM | None:
+        result = await self.session.execute(
+            select(HandoffORM).where(HandoffORM.idempotency_key == key)
+        )
+        return result.scalar_one_or_none()
 
     async def get_handoff(self, handoff_id: uuid.UUID) -> HandoffORM | None:
         return await self.session.get(HandoffORM, handoff_id)

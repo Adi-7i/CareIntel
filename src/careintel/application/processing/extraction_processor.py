@@ -10,17 +10,11 @@ from datetime import UTC, datetime
 
 from ulid import ULID
 
+from careintel.application.processing.access import ProcessingAccessGuard
 from careintel.core.config import Settings
-from careintel.core.errors import (
-    AuthorizationError,
-    CareIntelError,
-    NotFoundError,
-)
+from careintel.core.errors import ValidationError
 from careintel.domain.audit.events import AuditEventType
 from careintel.domain.auth.models import UserContext
-from careintel.domain.auth.permissions import Permission
-from careintel.domain.auth.policy import AuthorizationPolicy
-from careintel.domain.evidence.states import EvidenceState
 from careintel.domain.processing.processing_status import ProcessingStatus
 from careintel.domain.processing.processor_type import ProcessorType
 from careintel.infrastructure.extraction.port import ExtractionProvider
@@ -31,7 +25,6 @@ from careintel.persistence.models.processing import (
     ProcessingRunORM,
 )
 from careintel.persistence.repositories.evidence_outbox_repo import EvidenceOutboxRepository
-from careintel.persistence.repositories.evidence_repo import EvidenceRepository
 from careintel.persistence.repositories.processing_repo import ProcessingRepository
 
 
@@ -41,13 +34,13 @@ class ExtractionProcessor:
     def __init__(
         self,
         settings: Settings,
-        evidence_repo: EvidenceRepository,
+        access_guard: ProcessingAccessGuard,
         processing_repo: ProcessingRepository,
         outbox_repo: EvidenceOutboxRepository,
         extraction_provider: ExtractionProvider,
     ) -> None:
         self.settings = settings
-        self.evidence_repo = evidence_repo
+        self.access_guard = access_guard
         self.processing_repo = processing_repo
         self.outbox_repo = outbox_repo
         self.extraction_provider = extraction_provider
@@ -56,6 +49,7 @@ class ExtractionProcessor:
     async def process(
         self,
         evidence_id: uuid.UUID,
+        source_processing_run_id: uuid.UUID,
         text: str,
         user: UserContext,
         correlation_id: str,
@@ -63,30 +57,24 @@ class ExtractionProcessor:
         """
         Executes Extraction Pipeline for given text.
         """
-        evidence = await self.evidence_repo.get_by_id(evidence_id)
-        if not evidence:
-            raise NotFoundError(f"Evidence {evidence_id} not found.")
-
-        if not AuthorizationPolicy.evaluate(
-            user, Permission.PROCESSING_WRITE, str(evidence.case_id)
+        evidence = await self.access_guard.require_ready_evidence(evidence_id, user)
+        source_run = await self.processing_repo.get_run_by_id(source_processing_run_id)
+        if (
+            source_run is None
+            or source_run.evidence_id != evidence_id
+            or source_run.status != ProcessingStatus.COMPLETED.value
         ):
-            raise AuthorizationError("Missing PROCESSING_WRITE permission for this case.")
+            raise ValidationError("Extraction source processing run is invalid or incomplete.")
+        if not text.strip():
+            raise ValidationError("Extraction source artifact contains no readable text.")
 
-        if evidence.state != EvidenceState.READY:
-            raise CareIntelError(
-                f"Evidence must be READY for processing. Current: {evidence.state}"
-            )
-
-        config_version = "v1"
+        config_version = f"v1:{source_processing_run_id}"
         existing_run = await self.processing_repo.get_run_by_idempotency_key(
             evidence_id=evidence_id,
             processor_type=ProcessorType.CANDIDATE_EXTRACTION.value,
             config_version=config_version,
         )
-        if existing_run and existing_run.status in (
-            ProcessingStatus.COMPLETED,
-            ProcessingStatus.RUNNING,
-        ):
+        if existing_run:
             return existing_run.id
 
         run_id = uuid.uuid4()
@@ -95,26 +83,49 @@ class ExtractionProcessor:
             evidence_id=evidence_id,
             processor_type=ProcessorType.CANDIDATE_EXTRACTION.value,
             provider=self.settings.extraction_provider,
-            status=ProcessingStatus.RUNNING.value,
+            status=ProcessingStatus.PENDING.value,
             config_version=config_version,
-            started_at=datetime.now(UTC),
+            started_at=datetime.now(UTC).replace(tzinfo=None),
         )
         await self.processing_repo.add_run(run)
+        run.status = ProcessingStatus.RUNNING.value
 
         try:
-            extraction_result = await self.extraction_provider.extract_candidates(text, str(run_id))
+            extraction_result = await self.extraction_provider.extract_candidates(
+                text, str(run_id), evidence_id
+            )
 
             ext_run = ExtractionRunORM(
                 id=uuid.uuid4(),
                 processing_run_id=run_id,
+                source_processing_run_id=source_processing_run_id,
                 provider_version=extraction_result.provider_version,
             )
             self.processing_repo.session.add(ext_run)
+            await self.processing_repo.session.flush()
 
             for candidate in extraction_result.candidates:
-                # Convert provenance objects to dict
+                if candidate.run_id != run_id:
+                    raise ValidationError("Candidate extraction run identity does not match.")
+                if not candidate.provenance:
+                    raise ValidationError("Extracted candidate has no provenance.")
+
                 prov_dicts = []
                 for p in candidate.provenance:
+                    if p.evidence_id != evidence_id:
+                        raise ValidationError(
+                            "Candidate provenance references another evidence item."
+                        )
+                    if (p.span_start is None) != (p.span_end is None):
+                        raise ValidationError("Candidate provenance has an incomplete text span.")
+                    if p.span_start is not None and p.span_end is not None:
+                        if p.span_start < 0 or p.span_end <= p.span_start or p.span_end > len(text):
+                            raise ValidationError("Candidate provenance text span is invalid.")
+                        source_slice = text[p.span_start : p.span_end]
+                        if p.raw_source_text is not None and p.raw_source_text != source_slice:
+                            raise ValidationError(
+                                "Candidate provenance text does not match source."
+                            )
                     prov_dicts.append(
                         {
                             "evidence_id": str(p.evidence_id),
@@ -142,13 +153,16 @@ class ExtractionProcessor:
             await self.processing_repo.session.flush()
 
             run.status = ProcessingStatus.COMPLETED.value
-            run.completed_at = datetime.now(UTC)
+            run.completed_at = datetime.now(UTC).replace(tzinfo=None)
 
-        except Exception as e:
-            self.logger.error(f"Extraction Pipeline failed for run {run_id}: {e}")
+        except Exception as exc:
+            self.logger.error(
+                "Extraction processing failed",
+                extra={"run_id": str(run_id), "error_type": type(exc).__name__},
+            )
             run.status = ProcessingStatus.FAILED.value
-            run.failure_reason = str(e)
-            run.completed_at = datetime.now(UTC)
+            run.failure_reason = type(exc).__name__
+            run.completed_at = datetime.now(UTC).replace(tzinfo=None)
 
         outbox_event = EvidenceOutboxORM(
             id=str(ULID()),

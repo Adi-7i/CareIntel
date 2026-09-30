@@ -73,6 +73,7 @@ def test_missing_info_evaluator_satisfied() -> None:
         extraction_run_id=uuid.uuid4(),
         field_type="symptom_onset",
         value="yesterday",
+        status="VERIFIED",
     )
 
     items = MissingInfoEvaluator.evaluate(
@@ -87,6 +88,35 @@ def test_missing_info_evaluator_satisfied() -> None:
     assert items[0].status == RequirementStatus.SATISFIED
     assert items[0].requirement_key == "symptom_onset"
     assert c1.id in items[0].evidence_candidates
+
+
+def test_missing_info_evaluator_preserves_unverified_candidate() -> None:
+    policy = ChecklistPolicy(
+        version="demo_v1",
+        max_questions_per_round=5,
+        max_rounds=2,
+        requirements=[
+            ChecklistRequirement(
+                key="symptom_onset",
+                description="Onset",
+                materiality="DEMO",
+                version="demo_v1",
+                expected_field_types=["symptom_onset"],
+            )
+        ],
+    )
+    candidate = ExtractedCandidateORM(
+        id=uuid.uuid4(),
+        extraction_run_id=uuid.uuid4(),
+        field_type="symptom_onset",
+        value="yesterday",
+        status="CANDIDATE",
+    )
+
+    item = MissingInfoEvaluator.evaluate(uuid.uuid4(), uuid.uuid4(), [candidate], [], policy)[0]
+
+    assert item.status == RequirementStatus.UNVERIFIED
+    assert item.resolution is None
 
 
 def test_missing_info_evaluator_missing() -> None:

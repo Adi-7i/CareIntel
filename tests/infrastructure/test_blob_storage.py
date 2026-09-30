@@ -8,7 +8,7 @@ from careintel.infrastructure.storage.fake_provider import FakeBlobProvider
 
 async def dummy_stream(data: bytes, chunk_size: int = 1024) -> AsyncIterator[bytes]:
     for i in range(0, len(data), chunk_size):
-        yield data[i:i + chunk_size]
+        yield data[i : i + chunk_size]
 
 
 @pytest.mark.asyncio

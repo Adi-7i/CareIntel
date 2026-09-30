@@ -1,155 +1,115 @@
-"""
-Thin Workflow Tasks.
-"""
+"""Celery adapters for explicit workflow transitions and recovery."""
+
+from __future__ import annotations
 
 import asyncio
 import uuid
+from typing import Any
 
-from celery.exceptions import SoftTimeLimitExceeded
-from celery.utils.log import get_task_logger
-
+from careintel.application.workflow.outbox_dispatcher import UnifiedOutboxDispatcher
 from careintel.application.workflow.task_service import AsyncTaskService
-from careintel.core.errors import ServiceUnavailableError
-from careintel.domain.workflow.task_states import AsyncTaskStatus
+from careintel.domain.audit.events import AuditEventType
+from careintel.domain.case.commands import TransitionCaseCommand
+from careintel.domain.case.states import CaseState
+from careintel.domain.workflow.models import AsyncTask
+from careintel.persistence.models.audit import AuditLogORM
 from careintel.persistence.repositories.task_repo import AsyncTaskRepository
 from careintel.workers.celery_app import celery_app
-from careintel.workers.context import setup_worker_context
 from careintel.workers.db import get_session_factory
-
-logger = get_task_logger(__name__)
-
-
-@celery_app.task(
-    bind=True,
-    name="careintel.tasks.workflow.advance_case",
-    autoretry_for=(ServiceUnavailableError, TimeoutError),
-    retry_kwargs={"max_retries": 3},
-    retry_backoff=True,
-    retry_backoff_max=120,
-    retry_jitter=True,
-)
-def advance_case(self, task_id: str) -> None:
-    """Advance case state."""
-    asyncio.run(_async_advance_case(self, task_id))
+from careintel.workers.executor import RetryableTaskError, execute_durable_task
+from careintel.workers.services import build_case_service, build_structuring_service
 
 
-async def _async_advance_case(celery_task, task_id_str: str) -> None:
-    task_id = uuid.UUID(task_id_str)
+async def _handle_advance_case(session: Any, task: AsyncTask, actor: Any) -> dict[str, object]:
+    config = task.payload.config
+    case = await build_case_service(session).transition_state(
+        TransitionCaseCommand(
+            case_id=task.case_id,
+            actor_id=actor.id,
+            from_state=CaseState(str(config["from_state"])),
+            to_state=CaseState(str(config["to_state"])),
+            expected_version=int(config["expected_version"]),
+            reason=str(config.get("reason") or "Explicit asynchronous workflow command"),
+            correlation_id=task.correlation_id,
+        ),
+        actor,
+    )
+    return {"case_id": str(case.case_id), "state": case.state.value, "version": case.version}
+
+
+async def _handle_structuring(session: Any, task: AsyncTask, actor: Any) -> dict[str, object]:
+    result = await build_structuring_service(session).evaluate_case(
+        actor,
+        task.case_id,
+        uuid.UUID(str(task.payload.config["extraction_run_id"])),
+        task.correlation_id,
+    )
+    return {
+        "structuring_run_id": str(result.run_id),
+        "status": result.status,
+        "timeline_count": result.timeline_count,
+        "missing_info_count": result.missing_info_count,
+    }
+
+
+def _run(self: Any, task_id: str, handler: Any) -> dict[str, object] | None:
+    try:
+        return asyncio.run(execute_durable_task(task_id, handler, celery_task_id=self.request.id))
+    except RetryableTaskError as exc:
+        raise self.retry(exc=exc) from exc
+
+
+@celery_app.task(bind=True, name="careintel.tasks.workflow.advance_case", max_retries=3)
+def advance_case(self: Any, task_id: str) -> dict[str, object] | None:
+    return _run(self, task_id, _handle_advance_case)
+
+
+@celery_app.task(bind=True, name="careintel.tasks.workflow.trigger_structuring", max_retries=3)
+def trigger_structuring(self: Any, task_id: str) -> dict[str, object] | None:
+    return _run(self, task_id, _handle_structuring)
+
+
+@celery_app.task(bind=True, name="careintel.tasks.workflow.recover_stale_tasks", max_retries=2)
+def recover_stale_tasks(self: Any, threshold_seconds: int = 120) -> int:
+    return asyncio.run(_recover_stale_tasks(threshold_seconds))
+
+
+async def _recover_stale_tasks(threshold_seconds: int) -> int:
     session_factory = get_session_factory()
-
     async with session_factory() as session:
-        task_repo = AsyncTaskRepository(session)
-        task_service = AsyncTaskService(task_repo)
-
-        task = await task_service.get_task(task_id)
-        if not task:
-            return
-
-        if task.status in (AsyncTaskStatus.SUCCEEDED, AsyncTaskStatus.CANCELLED):
-            return
-
-        await task_service.transition_status(task_id, AsyncTaskStatus.RUNNING)
+        service = AsyncTaskService(AsyncTaskRepository(session))
+        recovered_ids = await service.sweep_stale_tasks(threshold_seconds)
+        for task_id in recovered_ids:
+            task = await service.get_task(task_id)
+            if task is None:
+                continue
+            session.add(
+                AuditLogORM(
+                    event_type=AuditEventType.TASK_STALE_RECOVERED.value,
+                    actor_id=task.actor_id,
+                    target_id=task.id,
+                    target_type="async_task",
+                    correlation_id=task.correlation_id,
+                    outcome="SUCCESS" if task.status.value == "PENDING" else "FAILURE",
+                    detail={"status": task.status.value},
+                )
+            )
         await session.commit()
 
-    try:
-        async with session_factory() as session:
-            with setup_worker_context(task.correlation_id, str(task.actor_id)) as actor:
-                logger.info(f"Executing case advance task {task_id} for case {task.case_id}")
-                await asyncio.sleep(0.1)
-
-        async with session_factory() as session:
-            task_repo = AsyncTaskRepository(session)
-            task_service = AsyncTaskService(task_repo)
-            await task_service.transition_status(task_id, AsyncTaskStatus.SUCCEEDED)
-            await session.commit()
-
-    except SoftTimeLimitExceeded:
-        async with session_factory() as session:
-            task_repo = AsyncTaskRepository(session)
-            task_service = AsyncTaskService(task_repo)
-            await task_service.transition_status(task_id, AsyncTaskStatus.FAILED)
-            await session.commit()
-        raise
-    except Exception as e:
-        logger.exception(f"Case advance task {task_id} failed: {e}")
-        raise
-
-
-@celery_app.task(
-    bind=True,
-    name="careintel.tasks.workflow.trigger_structuring",
-    autoretry_for=(ServiceUnavailableError, TimeoutError),
-    retry_kwargs={"max_retries": 3},
-    retry_backoff=True,
-    retry_backoff_max=120,
-    retry_jitter=True,
-)
-def trigger_structuring(self, task_id: str) -> None:
-    """Trigger structuring phase."""
-    asyncio.run(_async_trigger_structuring(self, task_id))
-
-
-async def _async_trigger_structuring(celery_task, task_id_str: str) -> None:
-    task_id = uuid.UUID(task_id_str)
-    session_factory = get_session_factory()
-
+    republished = 0
     async with session_factory() as session:
-        task_repo = AsyncTaskRepository(session)
-        task_service = AsyncTaskService(task_repo)
-
-        task = await task_service.get_task(task_id)
-        if not task:
-            return
-        if task.status in (AsyncTaskStatus.SUCCEEDED, AsyncTaskStatus.CANCELLED):
-            return
-        await task_service.transition_status(task_id, AsyncTaskStatus.RUNNING)
+        service = AsyncTaskService(AsyncTaskRepository(session))
+        for task_id in recovered_ids:
+            task = await service.get_task(task_id)
+            if task is None or task.status.value != "PENDING":
+                continue
+            celery_app.send_task(
+                task.task_type,
+                kwargs={"task_id": str(task.id)},
+                task_id=str(task.id),
+                queue=UnifiedOutboxDispatcher._route_task(task.task_type),
+            )
+            await AsyncTaskRepository(session).set_queued(task.id, str(task.id))
+            republished += 1
         await session.commit()
-
-    try:
-        async with session_factory() as session:
-            with setup_worker_context(task.correlation_id, str(task.actor_id)) as actor:
-                logger.info(f"Executing trigger structuring task {task_id} for case {task.case_id}")
-                await asyncio.sleep(0.1)
-
-        async with session_factory() as session:
-            task_repo = AsyncTaskRepository(session)
-            task_service = AsyncTaskService(task_repo)
-            await task_service.transition_status(task_id, AsyncTaskStatus.SUCCEEDED)
-            await session.commit()
-    except SoftTimeLimitExceeded:
-        async with session_factory() as session:
-            task_repo = AsyncTaskRepository(session)
-            task_service = AsyncTaskService(task_repo)
-            await task_service.transition_status(task_id, AsyncTaskStatus.FAILED)
-            await session.commit()
-        raise
-    except Exception as e:
-        logger.exception(f"Trigger structuring task {task_id} failed: {e}")
-        raise
-
-
-@celery_app.task(
-    bind=True,
-    name="careintel.tasks.workflow.recover_stale_tasks",
-    autoretry_for=(ServiceUnavailableError,),
-    retry_kwargs={"max_retries": 2},
-)
-def recover_stale_tasks(self, threshold_seconds: int = 120) -> None:
-    """Sweep and recover stale tasks."""
-    asyncio.run(_async_recover_stale_tasks(threshold_seconds))
-
-
-async def _async_recover_stale_tasks(threshold_seconds: int) -> None:
-    session_factory = get_session_factory()
-    try:
-        async with session_factory() as session:
-            task_repo = AsyncTaskRepository(session)
-            task_service = AsyncTaskService(task_repo)
-
-            recovered_ids = await task_service.sweep_stale_tasks(threshold_seconds)
-            if recovered_ids:
-                logger.info(f"Recovered stale tasks: {recovered_ids}")
-            await session.commit()
-    except Exception as e:
-        logger.exception(f"Stale task recovery failed: {e}")
-        raise
+    return republished

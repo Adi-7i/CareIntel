@@ -7,6 +7,7 @@ from __future__ import annotations
 import datetime
 import uuid
 from collections.abc import Sequence
+from typing import Any
 
 from careintel.core.errors import AuthorizationError, InvalidTransitionError, NotFoundError
 from careintel.domain.audit.events import AuditEventType
@@ -33,7 +34,11 @@ class ClarificationService:
         self.audit_repo = audit_repo
 
     async def request_clarification(
-        self, case_id: uuid.UUID, missing_item_ids: Sequence[uuid.UUID], actor: UserContext, correlation_id: str
+        self,
+        case_id: uuid.UUID,
+        missing_item_ids: Sequence[uuid.UUID],
+        actor: UserContext,
+        correlation_id: str,
     ) -> None:
         """Transitions queue item to CLARIFICATION_PENDING and records the request."""
         if not AuthorizationPolicy.evaluate(actor, Permission.REVIEW_WRITE):
@@ -47,9 +52,13 @@ class ClarificationService:
             raise AuthorizationError("Only assigned reviewer can request clarification.")
 
         try:
-            ReviewStateMachine.validate_transition(item.status, ReviewQueueStatus.CLARIFICATION_PENDING)
+            ReviewStateMachine.validate_transition(
+                item.status, ReviewQueueStatus.CLARIFICATION_PENDING
+            )
         except InvalidTransitionError as e:
-            raise InvalidTransitionError("Clarification can only be requested while IN_REVIEW.") from e
+            raise InvalidTransitionError(
+                "Clarification can only be requested while IN_REVIEW."
+            ) from e
 
         now = datetime.datetime.now(datetime.UTC)
         item.status = ReviewQueueStatus.CLARIFICATION_PENDING.value
@@ -72,7 +81,11 @@ class ClarificationService:
         )
 
     async def receive_clarification_response(
-        self, case_id: uuid.UUID, response_data: dict, actor: UserContext, correlation_id: str
+        self,
+        case_id: uuid.UUID,
+        response_data: dict[str, Any],
+        actor: UserContext,
+        correlation_id: str,
     ) -> None:
         """Transitions queue item back to IN_REVIEW once clarification is received."""
         # This could be called by a system/patient actor
@@ -83,7 +96,7 @@ class ClarificationService:
         try:
             ReviewStateMachine.validate_transition(item.status, ReviewQueueStatus.IN_REVIEW)
         except InvalidTransitionError as e:
-             raise InvalidTransitionError("Clarification can only be resolved if PENDING.") from e
+            raise InvalidTransitionError("Clarification can only be resolved if PENDING.") from e
 
         now = datetime.datetime.now(datetime.UTC)
         item.status = ReviewQueueStatus.IN_REVIEW.value

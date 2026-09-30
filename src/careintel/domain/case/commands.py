@@ -4,6 +4,7 @@ Case commands.
 
 import uuid
 from dataclasses import dataclass
+from datetime import datetime
 
 from careintel.domain.case.states import CaseState
 
@@ -24,4 +25,14 @@ class TransitionCaseCommand:
     to_state: CaseState | str
     expected_version: int
     reason: str | None
+    correlation_id: str
+
+
+@dataclass(frozen=True)
+class CreateEncounterCommand:
+    case_id: uuid.UUID
+    encounter_type: str
+    occurred_at: datetime
+    notes: str | None
+    actor_id: uuid.UUID
     correlation_id: str

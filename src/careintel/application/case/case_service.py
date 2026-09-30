@@ -9,7 +9,12 @@ import uuid
 
 from ulid import ULID
 
-from careintel.core.errors import ConcurrencyError, InvalidTransitionError, NotFoundError
+from careintel.core.errors import (
+    AuthorizationError,
+    ConcurrencyError,
+    InvalidTransitionError,
+    NotFoundError,
+)
 from careintel.domain.audit.events import AuditEventType
 from careintel.domain.auth.models import UserContext
 from careintel.domain.auth.permissions import Permission
@@ -66,6 +71,13 @@ class CaseService:
         Consent is verified at the API boundary before passing here.
         This simply sets up the initial case state.
         """
+        if not AuthorizationPolicy.evaluate(
+            actor,
+            Permission.CASE_WRITE,
+            facility_scope=cmd.facility_id,
+        ):
+            raise AuthorizationError("Actor is not authorized for the requested facility.")
+
         case_id = uuid.uuid4()
         now = datetime.datetime.now(datetime.UTC).replace(tzinfo=None)
 

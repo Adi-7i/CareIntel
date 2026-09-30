@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
+from careintel.api.v1.ai import router as ai_router
 from careintel.api.v1.audio import router as audio_router
 from careintel.api.v1.auth import router as auth_router
 from careintel.api.v1.cases import router as cases_router
@@ -18,6 +19,7 @@ from careintel.api.v1.evidence import router as evidence_router
 from careintel.api.v1.handoff import router as handoff_router
 from careintel.api.v1.health import router as health_router
 from careintel.api.v1.processing import router as processing_router
+from careintel.api.v1.retrieval import router as retrieval_router
 from careintel.api.v1.review import router as review_router
 from careintel.api.v1.structuring import router as structuring_router
 from careintel.api.v1.tasks import router as tasks_router
@@ -39,6 +41,10 @@ router.include_router(processing_router.router)
 
 # Phase 5: Information Extraction
 router.include_router(structuring_router.router)
+
+# Phase 7: Trusted Knowledge Retrieval & Advisory AI
+router.include_router(retrieval_router.router)
+router.include_router(ai_router.router)
 
 # Phase 8: Async Workflow Execution
 router.include_router(tasks_router.router)

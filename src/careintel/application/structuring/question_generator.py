@@ -59,9 +59,19 @@ class TemplateQuestionGenerator:
             if eq.requirement_key == item.requirement_key:
                 return None
 
+        requirement = next(
+            (
+                requirement
+                for requirement in policy.requirements
+                if requirement.key == item.requirement_key
+            ),
+            None,
+        )
+        if requirement is None:
+            return None
         template = self._TEMPLATES.get(
             item.requirement_key,
-            f"Could you provide more information regarding: {item.requirement_key}?",
+            f"Could you provide more information about {requirement.description}?",
         )
 
         now = datetime.datetime.now(datetime.UTC).replace(tzinfo=None)

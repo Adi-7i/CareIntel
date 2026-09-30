@@ -8,6 +8,7 @@ from collections.abc import Sequence
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from careintel.persistence.models.case import CaseORM
 from careintel.persistence.models.review import (
     DraftEditVersionORM,
     EscalationRecordORM,
@@ -37,7 +38,11 @@ class ReviewRepository:
         Get queue item with pessimistic lock.
         If expected_version is provided, uses optimistic concurrency control as well.
         """
-        stmt = select(ReviewQueueItemORM).where(ReviewQueueItemORM.case_id == case_id).with_for_update()
+        stmt = (
+            select(ReviewQueueItemORM)
+            .where(ReviewQueueItemORM.case_id == case_id)
+            .with_for_update()
+        )
         if expected_version is not None:
             stmt = stmt.where(ReviewQueueItemORM.version == expected_version)
         result = await self.session.execute(stmt)
@@ -51,24 +56,30 @@ class ReviewRepository:
     async def list_queue_items(
         self,
         status: str | None = None,
-        facility_id: uuid.UUID | None = None,
+        facility_ids: set[uuid.UUID] | None = None,
         assigned_to: uuid.UUID | None = None,
         limit: int = 50,
         offset: int = 0,
     ) -> Sequence[ReviewQueueItemORM]:
         """List queue items, optionally filtered."""
-        # For simplicity, we aren't joining with CaseORM here for facility filtering,
-        # but in a real implementation we would join to filter by CaseORM.facility_id
-        stmt = select(ReviewQueueItemORM)
+        stmt = select(ReviewQueueItemORM).join(CaseORM, CaseORM.id == ReviewQueueItemORM.case_id)
         if status:
             stmt = stmt.where(ReviewQueueItemORM.status == status)
         if assigned_to:
             stmt = stmt.where(ReviewQueueItemORM.assigned_reviewer_id == assigned_to)
+        if facility_ids is not None:
+            if facility_ids:
+                stmt = stmt.where(CaseORM.facility_id.in_(facility_ids))
+            else:
+                stmt = stmt.where(CaseORM.facility_id.is_(None))
 
-        stmt = stmt.order_by(
-            ReviewQueueItemORM.priority_bucket.desc(),
-            ReviewQueueItemORM.entered_queue_at.asc()
-        ).limit(limit).offset(offset)
+        stmt = (
+            stmt.order_by(
+                ReviewQueueItemORM.priority_bucket.desc(), ReviewQueueItemORM.entered_queue_at.asc()
+            )
+            .limit(limit)
+            .offset(offset)
+        )
 
         result = await self.session.execute(stmt)
         return result.scalars().all()
@@ -89,6 +100,15 @@ class ReviewRepository:
         result = await self.session.execute(stmt)
         return result.scalars().all()
 
+    async def get_latest_decision(self, case_id: uuid.UUID) -> ReviewDecisionORM | None:
+        result = await self.session.execute(
+            select(ReviewDecisionORM)
+            .where(ReviewDecisionORM.case_id == case_id)
+            .order_by(ReviewDecisionORM.created_at.desc())
+            .limit(1)
+        )
+        return result.scalar_one_or_none()
+
     # ── Draft Edit Versions ──────────────────────────────────────────────────
 
     async def create_draft_edit(self, edit: DraftEditVersionORM) -> DraftEditVersionORM:
@@ -105,6 +125,15 @@ class ReviewRepository:
         result = await self.session.execute(stmt)
         return result.scalars().all()
 
+    async def get_latest_edit_for_draft(self, draft_id: uuid.UUID) -> DraftEditVersionORM | None:
+        result = await self.session.execute(
+            select(DraftEditVersionORM)
+            .where(DraftEditVersionORM.draft_id == draft_id)
+            .order_by(DraftEditVersionORM.created_at.desc())
+            .limit(1)
+        )
+        return result.scalar_one_or_none()
+
     # ── Reviewer Notes ───────────────────────────────────────────────────────
 
     async def create_note(self, note: ReviewerNoteORM) -> ReviewerNoteORM:
@@ -114,8 +143,7 @@ class ReviewRepository:
 
     async def get_active_note_for_case(self, case_id: uuid.UUID) -> ReviewerNoteORM | None:
         stmt = select(ReviewerNoteORM).where(
-            ReviewerNoteORM.case_id == case_id,
-            ReviewerNoteORM.superseded_by.is_(None)
+            ReviewerNoteORM.case_id == case_id, ReviewerNoteORM.superseded_by.is_(None)
         )
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
@@ -129,6 +157,25 @@ class ReviewRepository:
 
     async def get_escalation(self, escalation_id: uuid.UUID) -> EscalationRecordORM | None:
         return await self.session.get(EscalationRecordORM, escalation_id)
+
+    async def get_escalation_for_update(
+        self, escalation_id: uuid.UUID
+    ) -> EscalationRecordORM | None:
+        result = await self.session.execute(
+            select(EscalationRecordORM)
+            .where(EscalationRecordORM.id == escalation_id)
+            .with_for_update()
+        )
+        return result.scalar_one_or_none()
+
+    async def get_open_escalation(self, case_id: uuid.UUID) -> EscalationRecordORM | None:
+        result = await self.session.execute(
+            select(EscalationRecordORM).where(
+                EscalationRecordORM.case_id == case_id,
+                EscalationRecordORM.status == "OPEN",
+            )
+        )
+        return result.scalar_one_or_none()
 
     async def get_escalations_for_case(self, case_id: uuid.UUID) -> Sequence[EscalationRecordORM]:
         stmt = (

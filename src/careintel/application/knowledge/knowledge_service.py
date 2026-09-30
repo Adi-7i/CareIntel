@@ -234,15 +234,20 @@ class KnowledgeService:
 
         # Ensure embedding version is registered
         vkey = self._embedding.version_key
-        model_name = vkey.split("-")[1] if "-" in vkey else "demo"
+        probe = await self._embedding.embed(chunks[0].content)
+        if probe.version_key != vkey or probe.dimension != self._embedding.dimension:
+            raise ValueError("Embedding provider metadata does not match its declared version.")
         embedding_version_orm = await self._repo.get_or_create_embedding_version(
             {
-                "provider": "demo",
-                "model": model_name,
+                "provider": probe.provider,
+                "model": probe.model,
                 "dimension": self._embedding.dimension,
                 "version_key": vkey,
             }
         )
+
+        if embedding_version_orm.dimension != self._embedding.dimension:
+            raise ValueError("Registered embedding dimension does not match active provider.")
 
         # Batch embed all chunk contents
         texts = [c.content for c in chunks]
@@ -250,7 +255,10 @@ class KnowledgeService:
 
         # Dimension safety check
         for result in results:
-            if result.dimension != embedding_version_orm.dimension:
+            if (
+                result.dimension != embedding_version_orm.dimension
+                or result.version_key != embedding_version_orm.version_key
+            ):
                 raise ValueError(
                     f"Embedding dimension mismatch: provider returned {result.dimension}, "
                     f"expected {embedding_version_orm.dimension}. "
@@ -277,8 +285,7 @@ class KnowledgeService:
             vector_str = "[" + ",".join(str(v) for v in embed_result.vector) + "]"
             await self._session.execute(
                 text(
-                    "UPDATE chunk_embeddings SET embedding = :vec::vector "
-                    "WHERE id = :eid"
+                    "UPDATE chunk_embeddings SET embedding = CAST(:vec AS vector) WHERE id = :eid"
                 ),
                 {"vec": vector_str, "eid": embed_orm.id},
             )
@@ -289,9 +296,7 @@ class KnowledgeService:
 
     # ── Publication ───────────────────────────────────────────────────────────
 
-    async def publish_source(
-        self, actor: UserContext, source_id: uuid.UUID
-    ) -> None:
+    async def publish_source(self, actor: UserContext, source_id: uuid.UUID) -> None:
         """
         Transition a DRAFT source to PUBLISHED status.
 
@@ -317,9 +322,7 @@ class KnowledgeService:
             detail={"source_id": str(source_id)},
         )
 
-    async def retire_source(
-        self, actor: UserContext, source_id: uuid.UUID
-    ) -> None:
+    async def retire_source(self, actor: UserContext, source_id: uuid.UUID) -> None:
         """
         Retire a knowledge source. Historical records are preserved.
 

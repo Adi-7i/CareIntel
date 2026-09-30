@@ -43,7 +43,7 @@ def evidence() -> EvidenceORM:
 @pytest.fixture
 def mocks() -> dict[str, AsyncMock]:
     return {
-        "evidence_repo": AsyncMock(),
+        "access_guard": AsyncMock(),
         "processing_repo": AsyncMock(),
         "outbox_repo": AsyncMock(),
         "extraction_provider": AsyncMock(),
@@ -60,7 +60,7 @@ def processor(mocks: dict[str, AsyncMock]) -> ExtractionProcessor:
     )
     return ExtractionProcessor(
         settings=settings,
-        evidence_repo=mocks["evidence_repo"],
+        access_guard=mocks["access_guard"],
         processing_repo=mocks["processing_repo"],
         outbox_repo=mocks["outbox_repo"],
         extraction_provider=mocks["extraction_provider"],
@@ -74,22 +74,39 @@ async def test_process_success(
     evidence: EvidenceORM,
     user: UserContext,
 ) -> None:
-    mocks["evidence_repo"].get_by_id.return_value = evidence
+    mocks["access_guard"].require_ready_evidence.return_value = evidence
     mocks["processing_repo"].get_run_by_idempotency_key.return_value = None
+    source_run_id = uuid.uuid4()
+    mocks["processing_repo"].get_run_by_id.return_value = type(
+        "SourceRun",
+        (),
+        {
+            "id": source_run_id,
+            "evidence_id": evidence.id,
+            "status": ProcessingStatus.COMPLETED.value,
+        },
+    )()
 
-    cand = CandidateField(
-        candidate_id=uuid.uuid4(),
-        run_id=uuid.uuid4(),
-        field_type="symptom",
-        value="fever",
-        provenance=[ExtractionProvenance(evidence_id=evidence.id)],
-    )
+    async def extract(text: str, run_id: str, evidence_id: uuid.UUID) -> ExtractionResult:
+        candidate = CandidateField(
+            candidate_id=uuid.uuid4(),
+            run_id=uuid.UUID(run_id),
+            field_type="symptom",
+            value="fever",
+            provenance=[
+                ExtractionProvenance(
+                    evidence_id=evidence_id,
+                    span_start=14,
+                    span_end=19,
+                    raw_source_text="fever",
+                )
+            ],
+        )
+        return ExtractionResult(candidates=[candidate], provider_version="v1")
 
-    mocks["extraction_provider"].extract_candidates.return_value = ExtractionResult(
-        candidates=[cand], provider_version="v1"
-    )
+    mocks["extraction_provider"].extract_candidates.side_effect = extract
 
-    await processor.process(evidence.id, "patient has a fever", user, "corr")
+    await processor.process(evidence.id, source_run_id, "patient has a fever", user, "corr")
 
     mocks["processing_repo"].add_run.assert_called_once()
     added_run = mocks["processing_repo"].add_run.call_args[0][0]

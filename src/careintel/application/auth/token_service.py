@@ -73,12 +73,16 @@ class JWTService:
             raise AuthError("Token issued in the future.")
 
         try:
+            issued_at = datetime.datetime.fromtimestamp(float(payload["iat"]), datetime.UTC)
+            expires_at = datetime.datetime.fromtimestamp(float(payload["exp"]), datetime.UTC)
             return TokenClaims(
                 sub=uuid.UUID(payload["sub"]),
                 sid=payload["sid"],
                 jti=payload["jti"],
                 iss=payload["iss"],
                 aud=payload["aud"],
+                iat=issued_at,
+                exp=expires_at,
             )
-        except (ValueError, KeyError, TypeError) as e:
+        except (OverflowError, ValueError, KeyError, TypeError) as e:
             raise AuthError("Invalid token claims format.") from e

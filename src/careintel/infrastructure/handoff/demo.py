@@ -17,7 +17,9 @@ class DemoHandoffProvider(HandoffProvider):
     Always succeeds after a short delay.
     """
 
-    async def deliver(self, package_content: dict[str, Any], recipient_config: dict[str, Any]) -> DeliveryResult:
+    async def deliver(
+        self, package_content: dict[str, Any], recipient_config: dict[str, Any]
+    ) -> DeliveryResult:
         # Simulate network delay
         await asyncio.sleep(0.5)
 

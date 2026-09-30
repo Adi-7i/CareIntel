@@ -45,11 +45,10 @@ async def test_evaluate_case_unauthorized(
 # and this is a skeleton prototype for Phase 6, we will focus on asserting that
 # the route exists and is protected.
 
+
 async def test_get_timeline_protected(
     client: AsyncClient,
 ) -> None:
     case_id = uuid.uuid4()
     response = await client.get(f"/api/v1/cases/{case_id}/timeline")
-    # Our API might return 401 if unauthenticated, depending on global router config.
-    assert response.status_code in (401, 200)
-
+    assert response.status_code == 401

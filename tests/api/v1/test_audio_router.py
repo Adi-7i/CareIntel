@@ -45,7 +45,7 @@ async def test_synthesize_speech_success(
     response = await client.post(
         "/api/v1/audio/speech",
         json={"text": "Hello world", "voice": "nova"},
-        headers={"Authorization": "Bearer dummy"}
+        headers={"Authorization": "Bearer dummy"},
     )
 
     assert response.status_code == 200
@@ -78,9 +78,7 @@ async def test_synthesize_speech_text_too_long(
     app.dependency_overrides[get_speech_service] = lambda: mock_speech_service
     long_text = "A" * 4097
     response = await client.post(
-        "/api/v1/audio/speech",
-        json={"text": long_text},
-        headers={"Authorization": "Bearer dummy"}
+        "/api/v1/audio/speech", json={"text": long_text}, headers={"Authorization": "Bearer dummy"}
     )
 
     assert response.status_code == 422

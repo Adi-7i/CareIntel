@@ -50,10 +50,11 @@ class AIRepository:
         await self._session.flush()
         return orm
 
+    async def get_run(self, run_id: uuid.UUID) -> AIRunORM | None:
+        return await self._session.get(AIRunORM, run_id)
+
     async def update_run(self, run_id: uuid.UUID, updates: dict[str, Any]) -> None:
-        await self._session.execute(
-            update(AIRunORM).where(AIRunORM.id == run_id).values(**updates)
-        )
+        await self._session.execute(update(AIRunORM).where(AIRunORM.id == run_id).values(**updates))
         await self._session.flush()
 
     # ── AI Drafts ─────────────────────────────────────────────────────────────
@@ -71,10 +72,42 @@ class AIRepository:
         return result.scalar_one_or_none()
 
     async def get_draft(self, draft_id: uuid.UUID) -> AIDraftORM | None:
+        result = await self._session.execute(select(AIDraftORM).where(AIDraftORM.id == draft_id))
+        return result.scalar_one_or_none()
+
+    async def get_draft_for_update(
+        self, draft_id: uuid.UUID, expected_version: int | None = None
+    ) -> AIDraftORM | None:
+        stmt = select(AIDraftORM).where(AIDraftORM.id == draft_id).with_for_update()
+        if expected_version is not None:
+            stmt = stmt.where(AIDraftORM.version == expected_version)
+        return (await self._session.execute(stmt)).scalar_one_or_none()
+
+    async def list_drafts_for_case(self, case_id: uuid.UUID) -> list[AIDraftORM]:
         result = await self._session.execute(
-            select(AIDraftORM).where(AIDraftORM.id == draft_id)
+            select(AIDraftORM)
+            .join(AIRunORM, AIRunORM.id == AIDraftORM.ai_run_id)
+            .where(AIRunORM.case_id == case_id)
+            .order_by(AIDraftORM.created_at.desc())
+        )
+        return list(result.scalars().all())
+
+    async def get_draft_case_id(self, draft_id: uuid.UUID) -> uuid.UUID | None:
+        result = await self._session.execute(
+            select(AIRunORM.case_id)
+            .join(AIDraftORM, AIDraftORM.ai_run_id == AIRunORM.id)
+            .where(AIDraftORM.id == draft_id)
         )
         return result.scalar_one_or_none()
+
+    async def get_policy_decisions_for_case(self, case_id: uuid.UUID) -> list[PolicyDecisionORM]:
+        result = await self._session.execute(
+            select(PolicyDecisionORM)
+            .join(AIRunORM, AIRunORM.id == PolicyDecisionORM.ai_run_id)
+            .where(AIRunORM.case_id == case_id)
+            .order_by(PolicyDecisionORM.created_at)
+        )
+        return list(result.scalars().all())
 
     async def update_draft(self, draft_id: uuid.UUID, updates: dict[str, Any]) -> None:
         await self._session.execute(

@@ -34,9 +34,12 @@ class AzureBlobProvider(BlobStoragePort):
             logger.info(f"Created Azure Blob container: {self._container_name}")
         except ResourceExistsError:
             logger.info(f"Azure Blob container {self._container_name} already exists.")
-        except Exception as e:
-            logger.error(f"Failed to verify/create Azure Blob container {self._container_name}: {e}")
-            raise StorageError(f"Container verification failed: {e}") from e
+        except Exception as exc:
+            logger.error(
+                "Failed to verify/create Azure Blob container",
+                extra={"error_type": type(exc).__name__},
+            )
+            raise StorageError("Container verification failed") from exc
 
     async def upload(
         self, key: str, data: AsyncIterator[bytes], content_type: str, size: int
@@ -49,26 +52,25 @@ class AzureBlobProvider(BlobStoragePort):
             logger.info(
                 "Uploaded blob to Azure Storage",
                 extra={
-                    "blob_key": key,
                     "container": self._container_name,
                     "size_bytes": size,
                     "content_type": content_type,
                     "latency_s": round(latency, 3),
                     "success": True,
-                }
+                },
             )
-        except Exception as e:
+        except Exception as exc:
             latency = (datetime.datetime.now() - start_time).total_seconds()
             logger.error(
-                f"Failed to upload to Azure Blob Storage: {e}",
+                "Failed to upload to Azure Blob Storage",
                 extra={
-                    "blob_key": key,
                     "container": self._container_name,
                     "latency_s": round(latency, 3),
                     "success": False,
-                }
+                    "error_type": type(exc).__name__,
+                },
             )
-            raise StorageError(f"Failed to upload to Azure Blob Storage: {e}") from e
+            raise StorageError("Failed to upload to Azure Blob Storage") from exc
 
     async def download(self, key: str) -> AsyncIterator[bytes]:
         start_time = datetime.datetime.now()
@@ -80,27 +82,26 @@ class AzureBlobProvider(BlobStoragePort):
             logger.info(
                 "Started download stream from Azure Storage",
                 extra={
-                    "blob_key": key,
                     "container": self._container_name,
                     "latency_s": round(latency, 3),
                     "success": True,
-                }
+                },
             )
 
             async for chunk in stream.chunks():
                 yield chunk
-        except Exception as e:
+        except Exception as exc:
             latency = (datetime.datetime.now() - start_time).total_seconds()
             logger.error(
-                f"Failed to download from Azure Blob Storage: {e}",
+                "Failed to download from Azure Blob Storage",
                 extra={
-                    "blob_key": key,
                     "container": self._container_name,
                     "latency_s": round(latency, 3),
                     "success": False,
-                }
+                    "error_type": type(exc).__name__,
+                },
             )
-            raise StorageError(f"Failed to download from Azure Blob Storage: {e}") from e
+            raise StorageError("Failed to download from Azure Blob Storage") from exc
 
     async def delete(self, key: str) -> None:
         try:
@@ -109,30 +110,29 @@ class AzureBlobProvider(BlobStoragePort):
             logger.info(
                 "Deleted blob from Azure Storage",
                 extra={
-                    "blob_key": key,
                     "container": self._container_name,
                     "success": True,
-                }
+                },
             )
         except ResourceNotFoundError:
             pass
-        except Exception as e:
+        except Exception as exc:
             logger.error(
-                f"Azure Blob Storage delete failed: {e}",
+                "Azure Blob Storage delete failed",
                 extra={
-                    "blob_key": key,
                     "container": self._container_name,
                     "success": False,
-                }
+                    "error_type": type(exc).__name__,
+                },
             )
-            raise StorageError(f"Azure Blob Storage delete failed: {e}") from e
+            raise StorageError("Azure Blob Storage delete failed") from exc
 
     async def exists(self, key: str) -> bool:
         try:
             blob_client = self._container_client.get_blob_client(key)
             return await blob_client.exists()
-        except Exception as e:
-            raise StorageError(f"Failed to check existence in Azure Blob Storage: {e}") from e
+        except Exception as exc:
+            raise StorageError("Failed to check existence in Azure Blob Storage") from exc
 
     async def generate_sas_url(self, key: str, ttl_seconds: int) -> str:
         try:
@@ -147,5 +147,9 @@ class AzureBlobProvider(BlobStoragePort):
                 + datetime.timedelta(seconds=ttl_seconds),
             )
             return f"{blob_client.url}?{sas_token}"
-        except Exception as e:
-            raise StorageError(f"Failed to generate SAS URL: {e}") from e
+        except Exception as exc:
+            raise StorageError("Failed to generate SAS URL") from exc
+
+    async def close(self) -> None:
+        """Close the underlying Azure HTTP transport."""
+        await self._client.close()

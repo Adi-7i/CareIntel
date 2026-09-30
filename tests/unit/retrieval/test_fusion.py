@@ -63,7 +63,9 @@ class TestRRFFusion:
         """Same inputs always produce the same ranked output."""
         ids = [make_chunk_id(i) for i in range(5)]
         dense = [DenseSearchResult(chunk_id=ids[i], dense_score=1.0 - i * 0.1) for i in range(5)]
-        sparse = [SparseSearchResult(chunk_id=ids[4 - i], sparse_score=1.0 - i * 0.1) for i in range(5)]
+        sparse = [
+            SparseSearchResult(chunk_id=ids[4 - i], sparse_score=1.0 - i * 0.1) for i in range(5)
+        ]
 
         r1 = fusion.fuse(dense, sparse, top_k=5)
         r2 = fusion.fuse(dense, sparse, top_k=5)

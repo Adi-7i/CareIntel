@@ -17,6 +17,7 @@ class AsyncTaskPayload:
     """
     Strongly typed payload for background execution.
     """
+
     task_type: str
     task_version: int
     entity_type: str
@@ -59,6 +60,7 @@ class AsyncTask:
     """
     Domain model for a durable background task execution.
     """
+
     id: uuid.UUID
     task_type: str
     task_version: int

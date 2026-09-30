@@ -13,17 +13,26 @@ CRITICAL INVARIANTS:
 
 from __future__ import annotations
 
-import datetime
 import hashlib
+import json
+import time
 import uuid
+from dataclasses import asdict
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from careintel.application.ai.output_validation import validate_advisory_output
 from careintel.application.ai.policy_service import PolicyService
 from careintel.core.correlation import get_correlation_id
-from careintel.core.errors import NotFoundError, ValidationError
-from careintel.domain.ai.models import AIDraft, AITaskConfig, SafeContext
+from careintel.domain.ai.models import (
+    AIDraft,
+    AITaskConfig,
+    SafeContext,
+)
+from careintel.domain.ai.models import (
+    ValidationError as AIValidationError,
+)
 from careintel.domain.ai.status import (
     AIRunStatus,
     DraftReviewerStatus,
@@ -78,17 +87,13 @@ class AIService:
 
     def _hash_context(self, context: SafeContext) -> str:
         """Deterministically hash the context for idempotency."""
-        # Simple representation for hashing; in production, use a stable JSON dump
-        # covering the exact fields.
-        rep = (
-            context.system_instructions
-            + context.task_instructions
-            + str(context.knowledge_passages)
-            + str(context.patient_evidence)
-            + str(context.stt_transcripts)
-            + str(context.ocr_content)
+        serialized = json.dumps(
+            asdict(context),
+            sort_keys=True,
+            separators=(",", ":"),
+            default=str,
         )
-        return hashlib.sha256(rep.encode("utf-8")).hexdigest()
+        return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
 
     async def execute_task(
         self,
@@ -116,27 +121,34 @@ class AIService:
             prompt_version=config.prompt_version,
         )
         if existing_run is not None:
-            # If completed and draft exists, return the cached draft
             draft_orm = await self._repo.get_draft_for_run(existing_run.id)
             if draft_orm:
                 return self._to_draft_domain(draft_orm)
-
-        # 2. Create Run Record
-        run_orm = await self._repo.create_run(
-            {
-                "case_id": case_id,
-                "actor_id": actor.id,
-                "task_type": config.task_type.value,
-                "provider": config.provider,
-                "model": config.model,
-                "prompt_version": config.prompt_version,
-                "schema_version": config.schema_version,
-                "retrieval_run_id": retrieval_id,
-                "status": AIRunStatus.IN_PROGRESS.value,
-                "input_hash": input_hash,
-                "usage_json": {},
-            }
-        )
+            run_orm = existing_run
+            await self._repo.update_run(
+                run_orm.id,
+                {
+                    "status": AIRunStatus.IN_PROGRESS.value,
+                    "error_category": None,
+                    "failure_reason": None,
+                },
+            )
+        else:
+            run_orm = await self._repo.create_run(
+                {
+                    "case_id": case_id,
+                    "actor_id": actor.id,
+                    "task_type": config.task_type.value,
+                    "provider": config.provider,
+                    "model": config.model,
+                    "prompt_version": config.prompt_version,
+                    "schema_version": config.schema_version,
+                    "retrieval_run_id": retrieval_id,
+                    "status": AIRunStatus.IN_PROGRESS.value,
+                    "input_hash": input_hash,
+                    "usage_json": {},
+                }
+            )
         await self._session.commit()
         await self._audit_event(
             event_type=AuditEventType.AI_RUN_STARTED,
@@ -147,15 +159,18 @@ class AIService:
         )
 
         # 3. Invoke LLM
+        started = time.monotonic()
         try:
             result = await self._llm.generate_structured(context, config)
-        except LLMProviderError as e:
+        except Exception as exc:
+            latency_ms = int((time.monotonic() - started) * 1000)
             await self._repo.update_run(
                 run_orm.id,
                 {
                     "status": AIRunStatus.FAILED.value,
                     "error_category": "PROVIDER_ERROR",
-                    "failure_reason": str(e),
+                    "failure_reason": type(exc).__name__,
+                    "latency_ms": latency_ms,
                 },
             )
             await self._session.commit()
@@ -165,9 +180,13 @@ class AIService:
                 target_id=run_orm.id,
                 target_type="ai_run",
                 outcome="failure",
-                detail={"error": str(e)},
+                detail={"error_category": type(exc).__name__},
             )
-            raise
+            if isinstance(exc, LLMProviderError):
+                raise
+            raise LLMProviderError(f"AI provider failed ({type(exc).__name__})") from exc
+
+        latency_ms = int((time.monotonic() - started) * 1000)
 
         output_hash = hashlib.sha256(result.raw_response.encode("utf-8")).hexdigest()
         usage = {
@@ -176,42 +195,59 @@ class AIService:
             "total_tokens": result.prompt_tokens + result.completion_tokens,
         }
 
-        if not result.parsed_content:
-            # Validation failure at the adapter level
-            # (should not happen with structured outputs, but just in case)
-            await self._repo.update_run(
-                run_orm.id,
-                {
-                    "status": AIRunStatus.FAILED.value,
-                    "output_hash": output_hash,
-                    "usage_json": usage,
-                    "error_category": "VALIDATION_ERROR",
-                    "failure_reason": "Failed to parse JSON response",
-                },
-            )
-            await self._session.commit()
-            raise ValueError("Failed to parse LLM structured output.")
-
-        # 4. Create initial Draft
-        draft_content = result.parsed_content
-        # Extract provenance if the schema supports it
-        claim_provenance_raw = draft_content.get("claim_provenance", [])
+        draft_content = result.parsed_content if isinstance(result.parsed_content, dict) else {}
+        validated, validation = validate_advisory_output(draft_content, context)
+        persisted_content = (
+            validated.model_dump(mode="json") if validated is not None else draft_content
+        )
+        validation_errors = [asdict(error) for error in validation.errors]
+        claim_provenance_raw = [
+            {
+                "claim_text": item.claim_text,
+                "status": item.status,
+                "supporting_source_ids": [str(value) for value in item.supporting_source_ids],
+            }
+            for item in validation.claim_provenance
+        ]
 
         draft_orm = await self._repo.create_draft(
             {
                 "ai_run_id": run_orm.id,
-                "content_json": draft_content,
-                "validation_status": ValidationStatus.ACCEPTED.value,
-                "validation_errors": [],
-                "provenance_json": (
-                    claim_provenance_raw
-                    if isinstance(claim_provenance_raw, list)
-                    else []
+                "content_json": persisted_content,
+                "validation_status": validation.status.value,
+                "validation_errors": validation_errors,
+                "provenance_json": claim_provenance_raw,
+                "reviewer_status": (
+                    DraftReviewerStatus.DRAFT.value
+                    if validation.status == ValidationStatus.ACCEPTED
+                    else DraftReviewerStatus.REJECTED.value
                 ),
-                "reviewer_status": DraftReviewerStatus.DRAFT.value,
             }
         )
         draft_domain = self._to_draft_domain(draft_orm)
+
+        if validation.status != ValidationStatus.ACCEPTED:
+            await self._repo.update_run(
+                run_orm.id,
+                {
+                    "status": AIRunStatus.REJECTED.value,
+                    "output_hash": output_hash,
+                    "usage_json": usage,
+                    "latency_ms": latency_ms,
+                    "error_category": "VALIDATION_ERROR",
+                    "failure_reason": "StructuredOutputRejected",
+                },
+            )
+            await self._session.commit()
+            await self._audit_event(
+                event_type=AuditEventType.AI_DRAFT_REJECTED,
+                actor_id=actor.id,
+                target_id=run_orm.id,
+                target_type="ai_run",
+                outcome="failure",
+                detail={"validation_error_count": len(validation_errors)},
+            )
+            return draft_domain
 
         # 5. Execute Deterministic Safety Policies
         policy_decisions = self._policy.evaluate_draft(draft_domain, context)
@@ -245,13 +281,13 @@ class AIService:
                 "status": final_run_status.value,
                 "output_hash": output_hash,
                 "usage_json": usage,
+                "latency_ms": latency_ms,
             },
         )
 
         if has_failure:
             await self._repo.update_draft(
-                draft_orm.id,
-                {"reviewer_status": final_reviewer_status.value}
+                draft_orm.id, {"reviewer_status": final_reviewer_status.value}
             )
 
         await self._session.commit()
@@ -279,63 +315,6 @@ class AIService:
         assert updated_draft is not None
         return self._to_draft_domain(updated_draft)
 
-    async def approve_draft(self, actor: UserContext, draft_id: uuid.UUID) -> None:
-        """Approve an AI draft for use in case state transitions."""
-        from careintel.application.auth.permission_service import PermissionService
-        PermissionService.check(actor, Permission.AI_WRITE)
-
-        draft = await self._repo.get_draft(draft_id)
-        if not draft:
-            raise NotFoundError("Draft not found")
-
-        if draft.reviewer_status == DraftReviewerStatus.REJECTED.value:
-            raise ValidationError("Cannot approve a rejected draft.")
-
-        await self._repo.update_draft(
-            draft_id,
-            {
-                "reviewer_status": DraftReviewerStatus.APPROVED.value,
-                "reviewer_id": actor.id,
-                "reviewed_at": datetime.datetime.now(datetime.UTC).replace(tzinfo=None),
-            }
-        )
-        await self._session.commit()
-        await self._audit_event(
-            event_type=AuditEventType.AI_DRAFT_REVIEWED,
-            actor_id=actor.id,
-            target_id=draft_id,
-            target_type="ai_draft",
-            outcome="success",
-            detail={"decision": "APPROVED"}
-        )
-
-    async def reject_draft(self, actor: UserContext, draft_id: uuid.UUID) -> None:
-        """Reject an AI draft."""
-        from careintel.application.auth.permission_service import PermissionService
-        PermissionService.check(actor, Permission.AI_WRITE)
-
-        draft = await self._repo.get_draft(draft_id)
-        if not draft:
-            raise NotFoundError("Draft not found")
-
-        await self._repo.update_draft(
-            draft_id,
-            {
-                "reviewer_status": DraftReviewerStatus.REJECTED.value,
-                "reviewer_id": actor.id,
-                "reviewed_at": datetime.datetime.now(datetime.UTC).replace(tzinfo=None),
-            }
-        )
-        await self._session.commit()
-        await self._audit_event(
-            event_type=AuditEventType.AI_DRAFT_REJECTED,
-            actor_id=actor.id,
-            target_id=draft_id,
-            target_type="ai_draft",
-            outcome="success",
-            detail={"decision": "REJECTED"}
-        )
-
     @staticmethod
     def _to_draft_domain(orm: Any) -> AIDraft:
         from careintel.domain.ai.models import ClaimProvenance
@@ -344,18 +323,20 @@ class AIService:
         for p in orm.provenance_json:
             src_ids = p.get("supporting_source_ids", [])
             ids = [uuid.UUID(uid) if isinstance(uid, str) else uid for uid in src_ids]
-            prov_list.append(ClaimProvenance(
-                claim_text=p.get("claim_text", ""),
-                status=p.get("status", "UNSUPPORTED"),
-                supporting_source_ids=ids,
-            ))
+            prov_list.append(
+                ClaimProvenance(
+                    claim_text=p.get("claim_text", ""),
+                    status=p.get("status", "UNSUPPORTED"),
+                    supporting_source_ids=ids,
+                )
+            )
 
         return AIDraft(
             draft_id=orm.id,
             ai_run_id=orm.ai_run_id,
             content=dict(orm.content_json),
             validation_status=ValidationStatus(orm.validation_status),
-            validation_errors=[],  # Simplification for this phase
+            validation_errors=[AIValidationError(**item) for item in orm.validation_errors],
             claim_provenance=prov_list,
             reviewer_status=DraftReviewerStatus(orm.reviewer_status),
             reviewer_id=orm.reviewer_id,

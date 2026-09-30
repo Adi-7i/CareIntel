@@ -1,17 +1,4 @@
-"""
-Retrieval Service.
-
-Use-case orchestrator for knowledge and patient evidence retrieval.
-
-Responsibilities:
-- Hash queries for idempotency.
-- Coordinate embedding provider for query vectors.
-- Orchestrate Dense, Sparse, or Hybrid search.
-- Fuse results using RRFFusion.
-- Rerank results via RerankProvider.
-- Persist retrieval run and candidate audits.
-- Emit RETRIEVAL_EXECUTED audit event.
-"""
+"""Case-scoped, version-pinned hybrid retrieval application service."""
 
 from __future__ import annotations
 
@@ -21,211 +8,290 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from careintel.application.auth.consent_service import ConsentService
+from careintel.application.auth.permission_service import PermissionService
 from careintel.application.retrieval.dense_search import DenseSearcher
 from careintel.application.retrieval.fusion import RRFFusion
 from careintel.application.retrieval.sparse_search import SparseSearcher
-from careintel.core.config import Settings
 from careintel.core.correlation import get_correlation_id
+from careintel.core.errors import NotFoundError, ValidationError
 from careintel.domain.audit.events import AuditEventType
 from careintel.domain.auth.models import UserContext
 from careintel.domain.auth.permissions import Permission
+from careintel.domain.consent.purpose import ConsentPurpose
 from careintel.domain.retrieval.models import (
     RetrievalCandidate,
     RetrievalMetadata,
     RetrievalResult,
 )
-from careintel.domain.retrieval.status import RetrievalStatus, SearchMode
+from careintel.domain.retrieval.status import RetrievalStatus, SearchMode, SourceType
 from careintel.infrastructure.embedding.port import EmbeddingProvider
 from careintel.infrastructure.reranker.port import RerankProvider
 from careintel.persistence.models.audit import AuditLogORM
+from careintel.persistence.models.case import CaseORM
 from careintel.persistence.models.retrieval import RetrievalCandidateORM, RetrievalRunORM
 from careintel.persistence.repositories.audit_repo import AuditRepository
+from careintel.persistence.repositories.case_repo import CaseRepository
+from careintel.persistence.repositories.knowledge_repo import KnowledgeRepository
 from careintel.persistence.repositories.retrieval_repo import RetrievalRepository
 
 
 class RetrievalService:
-    """Orchestrates hybrid search, fusion, and reranking."""
+    """Runs PostgreSQL lexical plus pgvector retrieval over trusted knowledge."""
 
     def __init__(
         self,
         session: AsyncSession,
         retrieval_repo: RetrievalRepository,
+        knowledge_repo: KnowledgeRepository,
+        case_repo: CaseRepository,
+        consent_service: ConsentService,
         audit_repo: AuditRepository,
         embedding_provider: EmbeddingProvider,
         rerank_provider: RerankProvider,
-        settings: Settings,
     ) -> None:
         self._session = session
         self._repo = retrieval_repo
+        self._knowledge = knowledge_repo
+        self._cases = case_repo
+        self._consent = consent_service
         self._audit = audit_repo
         self._embedding = embedding_provider
         self._reranker = rerank_provider
-        self._settings = settings
-
         self._dense_searcher = DenseSearcher(session)
         self._sparse_searcher = SparseSearcher(session)
         self._fusion = RRFFusion(k=60)
 
+    async def _authorized_case(self, case_id: uuid.UUID, actor: UserContext) -> CaseORM:
+        case = await self._cases.get_by_id(case_id)
+        if case is None:
+            raise NotFoundError("Case not found.")
+        PermissionService.check(
+            actor,
+            Permission.KNOWLEDGE_READ,
+            facility_scope=case.facility_id,
+        )
+        await self._consent.require_active(
+            case.synthetic_subject_id,
+            ConsentPurpose.AI_ANALYSIS.value,
+            "1.0",
+        )
+        return case
+
     async def _audit_event(
         self,
-        event_type: AuditEventType,
         actor_id: uuid.UUID,
-        target_id: uuid.UUID | None,
-        target_type: str | None,
+        run_id: uuid.UUID,
         outcome: str,
-        detail: dict[str, Any] | None = None,
+        detail: dict[str, Any],
     ) -> None:
-        entry = AuditLogORM(
-            event_type=event_type.value,
-            actor_id=actor_id,
-            target_id=target_id,
-            target_type=target_type,
-            correlation_id=get_correlation_id(),
-            outcome=outcome,
-            detail=detail,
+        await self._audit.append(
+            AuditLogORM(
+                event_type=AuditEventType.RETRIEVAL_EXECUTED.value,
+                actor_id=actor_id,
+                target_id=run_id,
+                target_type="retrieval_run",
+                correlation_id=get_correlation_id(),
+                outcome=outcome,
+                detail=detail,
+            )
         )
-        await self._audit.append(entry)
 
     async def retrieve_knowledge(
         self,
         actor: UserContext,
+        case_id: uuid.UUID,
         query: str,
+        corpus_version: str,
         mode: SearchMode = SearchMode.HYBRID,
         top_k: int = 10,
-        publication_status: str = "PUBLISHED",
     ) -> RetrievalResult:
-        """
-        Execute a knowledge retrieval operation.
+        """Retrieve only active chunks from a published, pinned corpus."""
+        await self._authorized_case(case_id, actor)
+        normalized_query = " ".join(query.split())
+        if not normalized_query:
+            raise ValidationError("Retrieval query cannot be empty.")
+        if not corpus_version.strip():
+            raise ValidationError("corpus_version is required.")
+        if top_k < 1 or top_k > 50:
+            raise ValidationError("top_k must be between 1 and 50.")
 
-        Idempotent: if identical query/mode/filters exists, returns
-        the cached retrieval run and its candidates.
-
-        Requires: KNOWLEDGE_READ permission.
-        """
-        from careintel.application.auth.permission_service import PermissionService
-
-        PermissionService.check(actor, Permission.KNOWLEDGE_READ)
-
-        # 1. Idempotency Check
-        query_hash = hashlib.sha256(query.strip().encode("utf-8")).hexdigest()
-        existing_orm = await self._repo.get_run_by_idempotency_key(
-            case_id=None,
+        query_hash = hashlib.sha256(normalized_query.encode("utf-8")).hexdigest()
+        run = await self._repo.get_run_by_idempotency_key(
+            case_id=case_id,
             query_hash=query_hash,
-            corpus_version=None,
+            corpus_version=corpus_version,
             search_mode=mode.value,
         )
-        if existing_orm is not None:
-            cand_orms = await self._repo.get_candidates_for_run(existing_orm.id)
-            return RetrievalResult(
-                metadata=self._to_metadata_domain(existing_orm),
-                candidates=[self._to_candidate_domain(c) for c in cand_orms],
+        if run is not None and run.status in {
+            RetrievalStatus.COMPLETED.value,
+            RetrievalStatus.ZERO_RESULTS.value,
+        }:
+            return await self._result_for_run(run)
+
+        embedding_version = None
+        if mode in {SearchMode.DENSE, SearchMode.HYBRID}:
+            embedding_version = await self._knowledge.get_embedding_version_by_key(
+                self._embedding.version_key
             )
-
-        # 2. Embedding Version Lookup
-        # Find the embedding version ID that matches the current provider
-        # We need this for the dense search.
-        from sqlalchemy import select
-
-        from careintel.persistence.models.knowledge import EmbeddingVersionORM
-
-        emb_version_orm = (
-            await self._session.execute(
-                select(EmbeddingVersionORM).where(
-                    EmbeddingVersionORM.version_key == self._embedding.version_key
+            if embedding_version is None:
+                raise ValidationError("Active embedding version is not registered.")
+            if embedding_version.dimension != self._embedding.dimension:
+                raise ValidationError(
+                    "Active embedding provider dimension does not match the registered version."
                 )
-            )
-        ).scalar_one_or_none()
-        emb_version_id = emb_version_orm.id if emb_version_orm else None
 
-        # 3. Execution
-        dense_results = []
-        if mode in (SearchMode.DENSE, SearchMode.HYBRID) and emb_version_id:
-            embed_res = await self._embedding.embed(query)
-            dense_results = await self._dense_searcher.search(
-                query_vector=embed_res.vector,
-                embedding_version_id=emb_version_id,
-                top_k=top_k * 2,  # Fetch more for fusion
-                publication_status=publication_status,
-            )
-
-        sparse_results = []
-        if mode in (SearchMode.SPARSE, SearchMode.HYBRID):
-            sparse_results = await self._sparse_searcher.search(
-                query_text=query,
-                top_k=top_k * 2,
-                publication_status=publication_status,
-            )
-
-        # 4. Fusion
-        fused = self._fusion.fuse(dense_results, sparse_results, top_k=top_k)
-
-        # 5. Reranking
-        if fused:
-            fused = await self._reranker.rerank(query, fused)
-
-        # 6. Persistence
-        run_orm = await self._repo.create_run(
-            {
-                "case_id": None,
-                "query_hash": query_hash,
-                "search_mode": mode.value,
-                "corpus_version": None,
-                "embedding_version_id": emb_version_id,
-                "applied_filters": {"publication_status": publication_status},
-                "status": RetrievalStatus.COMPLETED.value,
-                "zero_result_reason": "NO_MATCHES" if not fused else None,
-                "candidate_count": len(fused),
-            }
-        )
-
-        cand_data = []
-        for f in fused:
-            cand_data.append(
+        if run is None:
+            run = await self._repo.create_run(
                 {
-                    "retrieval_run_id": run_orm.id,
-                    "source_type": "KNOWLEDGE_CHUNK",
-                    "source_id": f.chunk_id,
-                    "rank": f.rank,
-                    "dense_score": f.dense_score,
-                    "sparse_score": f.sparse_score,
-                    "fusion_score": f.fusion_score,
-                    "citation_locator": None,
+                    "case_id": case_id,
+                    "query_hash": query_hash,
+                    "search_mode": mode.value,
+                    "corpus_version": corpus_version,
+                    "embedding_version_id": (
+                        embedding_version.id if embedding_version is not None else None
+                    ),
+                    "applied_filters": {"publication_status": "PUBLISHED"},
+                    "status": RetrievalStatus.FAILED.value,
+                    "zero_result_reason": "EXECUTION_NOT_COMPLETED",
+                    "candidate_count": 0,
                 }
             )
+            await self._session.commit()
 
-        cand_orms = await self._repo.create_candidates(cand_data)
-        await self._session.commit()
+        try:
+            dense_results = []
+            if embedding_version is not None:
+                embedded = await self._embedding.embed(normalized_query)
+                if (
+                    embedded.version_key != embedding_version.version_key
+                    or embedded.dimension != embedding_version.dimension
+                    or len(embedded.vector) != embedding_version.dimension
+                ):
+                    raise ValidationError("Embedding result metadata is incompatible.")
+                dense_results = await self._dense_searcher.search(
+                    query_vector=embedded.vector,
+                    embedding_version_id=embedding_version.id,
+                    corpus_version=corpus_version,
+                    top_k=top_k * 2,
+                )
 
-        # 7. Audit
-        await self._audit_event(
-            event_type=AuditEventType.RETRIEVAL_EXECUTED,
-            actor_id=actor.id,
-            target_id=run_orm.id,
-            target_type="retrieval_run",
-            outcome="success",
-            detail={
-                "search_mode": mode.value,
-                "candidate_count": len(fused),
-                "is_knowledge": True,
-            },
-        )
+            sparse_results = []
+            if mode in {SearchMode.SPARSE, SearchMode.HYBRID}:
+                sparse_results = await self._sparse_searcher.search(
+                    query_text=normalized_query,
+                    corpus_version=corpus_version,
+                    top_k=top_k * 2,
+                )
 
+            fused = self._fusion.fuse(dense_results, sparse_results, top_k=top_k)
+            if fused:
+                fused = await self._reranker.rerank(normalized_query, fused)
+
+            chunks = await self._knowledge.get_published_chunks(
+                [candidate.chunk_id for candidate in fused], corpus_version
+            )
+            chunk_map = {chunk.id: (chunk, version, source) for chunk, version, source in chunks}
+            fused = [candidate for candidate in fused if candidate.chunk_id in chunk_map]
+
+            await self._repo.delete_candidates_for_run(run.id)
+            candidates = await self._repo.create_candidates(
+                [
+                    {
+                        "retrieval_run_id": run.id,
+                        "source_type": SourceType.KNOWLEDGE_CHUNK.value,
+                        "source_id": candidate.chunk_id,
+                        "rank": index,
+                        "dense_score": candidate.dense_score,
+                        "sparse_score": candidate.sparse_score,
+                        "fusion_score": candidate.fusion_score,
+                        "citation_locator": self._citation(*chunk_map[candidate.chunk_id]),
+                    }
+                    for index, candidate in enumerate(fused, start=1)
+                ]
+            )
+            status = RetrievalStatus.COMPLETED if candidates else RetrievalStatus.ZERO_RESULTS
+            updates = {
+                "status": status.value,
+                "zero_result_reason": None if candidates else "NO_MATCHES",
+                "candidate_count": len(candidates),
+                "embedding_version_id": (
+                    embedding_version.id if embedding_version is not None else None
+                ),
+            }
+            await self._repo.update_run(run.id, updates)
+            await self._session.commit()
+            for key, value in updates.items():
+                setattr(run, key, value)
+            await self._audit_event(
+                actor.id,
+                run.id,
+                "SUCCESS",
+                {"search_mode": mode.value, "candidate_count": len(candidates)},
+            )
+            return RetrievalResult(
+                metadata=self._to_metadata_domain(
+                    run,
+                    embedding_version.version_key if embedding_version is not None else None,
+                ),
+                candidates=[self._to_candidate_domain(item) for item in candidates],
+            )
+        except Exception as exc:
+            await self._session.rollback()
+            await self._repo.update_run(
+                run.id,
+                {
+                    "status": RetrievalStatus.FAILED.value,
+                    "zero_result_reason": type(exc).__name__,
+                    "candidate_count": 0,
+                },
+            )
+            await self._session.commit()
+            await self._audit_event(
+                actor.id,
+                run.id,
+                "FAILURE",
+                {"search_mode": mode.value, "error_category": type(exc).__name__},
+            )
+            raise
+
+    async def get_result(
+        self, actor: UserContext, case_id: uuid.UUID, run_id: uuid.UUID
+    ) -> RetrievalResult:
+        await self._authorized_case(case_id, actor)
+        run = await self._repo.get_run(run_id)
+        if run is None or run.case_id != case_id:
+            raise NotFoundError("Retrieval run not found for case.")
+        return await self._result_for_run(run)
+
+    async def _result_for_run(self, run: RetrievalRunORM) -> RetrievalResult:
+        candidates = await self._repo.get_candidates_for_run(run.id)
+        embedding_key = None
+        if run.embedding_version_id is not None:
+            version = await self._knowledge.get_embedding_version_by_key(
+                self._embedding.version_key
+            )
+            if version is not None and version.id == run.embedding_version_id:
+                embedding_key = version.version_key
         return RetrievalResult(
-            metadata=self._to_metadata_domain(run_orm),
-            candidates=[self._to_candidate_domain(c) for c in cand_orms],
+            metadata=self._to_metadata_domain(run, embedding_key),
+            candidates=[self._to_candidate_domain(item) for item in candidates],
         )
 
-    def _to_metadata_domain(self, orm: RetrievalRunORM) -> RetrievalMetadata:
-        # Find embedding version key if we have ID
-        # Since this is synchronous mapping, we handle None or fetch later if needed
-        # For this design, we can store embedding_version_id temporarily or None
-        # if we aren't joining it. The model asks for key.
+    @staticmethod
+    def _citation(chunk: Any, version: Any, source: Any) -> str:
+        return f"{source.name}; version {version.version_key}; chunk {chunk.chunk_index}"
+
+    @staticmethod
+    def _to_metadata_domain(
+        orm: RetrievalRunORM, embedding_version_key: str | None
+    ) -> RetrievalMetadata:
         return RetrievalMetadata(
             retrieval_run_id=orm.id,
             query_hash=orm.query_hash,
             search_mode=SearchMode(orm.search_mode),
             corpus_version=orm.corpus_version,
-            embedding_version_key=None,  # Not fully joined in this response
+            embedding_version_key=embedding_version_key,
             applied_filters=dict(orm.applied_filters),
             status=RetrievalStatus(orm.status),
             zero_result_reason=orm.zero_result_reason,
@@ -235,8 +301,6 @@ class RetrievalService:
 
     @staticmethod
     def _to_candidate_domain(orm: RetrievalCandidateORM) -> RetrievalCandidate:
-        from careintel.domain.retrieval.status import SourceType
-
         return RetrievalCandidate(
             candidate_id=orm.id,
             retrieval_run_id=orm.retrieval_run_id,

@@ -8,7 +8,9 @@ that the router converts to the appropriate HTTP status.
 
 from __future__ import annotations
 
+import asyncio
 import time
+from collections.abc import Awaitable
 from dataclasses import dataclass, field
 
 import redis.asyncio as redis
@@ -47,34 +49,78 @@ async def check_readiness(engine: AsyncEngine, blob_provider: BlobStoragePort) -
     checks: dict[str, str] = {}
     settings = get_settings()
 
-    db_ok = await check_database_liveness(engine)
-    checks["database"] = "ok" if db_ok else "unavailable"
-
-    redis_ok = False
-    redis_url = settings.redis_url.get_secret_value() if settings.redis_url else None
-    if redis_url:
+    async def _bounded_probe(name: str, probe: Awaitable[bool]) -> bool:
+        task = asyncio.ensure_future(probe)
+        done, _pending = await asyncio.wait(
+            {task},
+            timeout=settings.readiness_timeout_seconds,
+        )
+        if not done:
+            task.cancel()
+            task.add_done_callback(
+                lambda completed: None if completed.cancelled() else completed.exception()
+            )
+            logger.warning(
+                "Dependency readiness check timed out",
+                extra={"dependency": name},
+            )
+            return False
         try:
-            r = redis.from_url(redis_url)
-            await r.ping()
-            redis_ok = True
-            await r.aclose()
-        except Exception as e:
-            logger.warning(f"Redis health check failed: {e}")
-    else:
-        # If running locally without redis, we consider it ok (demo mode)
-        # In production, settings validation would have failed startup if redis_url was missing.
-        redis_ok = not settings.is_production
+            return bool(task.result())
+        except Exception as exc:
+            logger.warning(
+                "Dependency readiness check failed",
+                extra={"dependency": name, "error_type": type(exc).__name__},
+            )
+            return False
 
-    checks["redis"] = "ok" if redis_ok else "unavailable"
+    redis_url = settings.redis_url.get_secret_value() if settings.redis_url else None
 
-    blob_ok = False
-    try:
-        # Just check existence of a dummy key. This touches the storage account without downloading anything.
+    async def _redis_probe() -> bool:
+        if not redis_url:
+            return not settings.is_production
+        r = redis.Redis.from_url(
+            redis_url,
+            socket_connect_timeout=settings.readiness_timeout_seconds,
+            socket_timeout=settings.readiness_timeout_seconds,
+        )
+        try:
+            result = bool(await r.ping())
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            try:
+                await asyncio.wait_for(
+                    r.aclose(),
+                    timeout=settings.readiness_timeout_seconds,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Redis health client close failed",
+                    extra={"error_type": type(exc).__name__},
+                )
+            raise
+        else:
+            await asyncio.wait_for(
+                r.aclose(),
+                timeout=settings.readiness_timeout_seconds,
+            )
+            return result
+
+    # Touch storage without downloading content. A missing dummy object is a
+    # successful connectivity result; only provider exceptions fail readiness.
+    async def _blob_probe() -> bool:
         await blob_provider.exists("healthcheck_dummy_key_do_not_create")
-        blob_ok = True
-    except Exception as e:
-        logger.warning(f"Blob storage health check failed: {e}")
+        return True
 
+    db_ok, redis_ok, blob_ok = await asyncio.gather(
+        _bounded_probe("database", check_database_liveness(engine)),
+        _bounded_probe("redis", _redis_probe()),
+        _bounded_probe("blob_storage", _blob_probe()),
+    )
+
+    checks["database"] = "ok" if db_ok else "unavailable"
+    checks["redis"] = "ok" if redis_ok else "unavailable"
     checks["blob_storage"] = "ok" if blob_ok else "unavailable"
 
     elapsed_ms = (time.perf_counter() - start) * 1000

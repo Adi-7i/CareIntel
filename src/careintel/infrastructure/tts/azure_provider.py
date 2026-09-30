@@ -32,7 +32,10 @@ class AzureTTSProvider(TTSProvider):
         self._default_voice = default_voice
 
     def _build_url(self) -> str:
-        return f"{self._endpoint}/openai/deployments/{self._deployment}/audio/speech?api-version={self._api_version}"
+        return (
+            f"{self._endpoint}/openai/deployments/{self._deployment}"
+            f"/audio/speech?api-version={self._api_version}"
+        )
 
     async def synthesize(self, text: str, voice: str | None = None) -> TTSResult:
         """
@@ -41,16 +44,9 @@ class AzureTTSProvider(TTSProvider):
         chosen_voice = voice or self._default_voice
         url = self._build_url()
 
-        headers = {
-            "api-key": self._api_key,
-            "Content-Type": "application/json"
-        }
+        headers = {"api-key": self._api_key, "Content-Type": "application/json"}
 
-        data = {
-            "model": self._deployment,
-            "input": text,
-            "voice": chosen_voice
-        }
+        data = {"model": self._deployment, "input": text, "voice": chosen_voice}
 
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.post(url, headers=headers, json=data)
@@ -68,6 +64,7 @@ class AzureTTSProvider(TTSProvider):
             model=self._deployment,
             voice=chosen_voice,
         )
+
 
 # Verify Protocol compliance
 def _check_protocol() -> None:

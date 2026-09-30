@@ -42,6 +42,9 @@ class StructuringRepository:
         self._session.add(run)
         await self._session.flush()
 
+    async def get_run(self, run_id: uuid.UUID) -> StructuringRunORM | None:
+        return await self._session.get(StructuringRunORM, run_id)
+
     async def update_run_status(self, run_id: uuid.UUID, status: str, **kwargs: Any) -> None:
         """Update a run's status and arbitrary kwargs."""
         stmt = (
@@ -84,7 +87,7 @@ class StructuringRepository:
             select(StructuringRunORM)
             .where(
                 StructuringRunORM.case_id == case_id,
-                StructuringRunORM.status == "COMPLETED",
+                StructuringRunORM.status.in_(["COMPLETED", "NO_INPUT"]),
             )
             .order_by(StructuringRunORM.created_at.desc())
         )
@@ -122,14 +125,11 @@ class StructuringRepository:
         return list(result.scalars().all())
 
     async def get_clarification_questions(
-        self, case_id: uuid.UUID
+        self, case_id: uuid.UUID, run_id: uuid.UUID | None = None
     ) -> list[ClarificationQuestionORM]:
-        stmt = (
-            select(ClarificationQuestionORM)
-            .where(
-                ClarificationQuestionORM.case_id == case_id,
-            )
-            .order_by(ClarificationQuestionORM.created_at.desc())
-        )
+        stmt = select(ClarificationQuestionORM).where(ClarificationQuestionORM.case_id == case_id)
+        if run_id is not None:
+            stmt = stmt.where(ClarificationQuestionORM.evaluation_run_id == run_id)
+        stmt = stmt.order_by(ClarificationQuestionORM.created_at, ClarificationQuestionORM.id)
         result = await self._session.execute(stmt)
         return list(result.scalars().all())

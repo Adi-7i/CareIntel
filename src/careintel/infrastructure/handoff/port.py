@@ -20,11 +20,13 @@ class DeliveryResult:
 class HandoffProvider(Protocol):
     """
     Protocol for handoff delivery providers.
-    
+
     Implementing classes could send FHIR, HL7, email, secure messaging, etc.
     """
 
-    async def deliver(self, package_content: dict[str, Any], recipient_config: dict[str, Any]) -> DeliveryResult:
+    async def deliver(
+        self, package_content: dict[str, Any], recipient_config: dict[str, Any]
+    ) -> DeliveryResult:
         """
         Attempts to deliver the package content using the provided recipient configuration.
         """

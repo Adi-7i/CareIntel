@@ -5,11 +5,14 @@ Uses actual database but mocks external AI/Storage providers.
 
 from __future__ import annotations
 
+import datetime
 import os
 import uuid
 from collections.abc import AsyncGenerator
+from typing import Any
 
 import pytest
+import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -28,7 +31,7 @@ _REQUIRES_REAL_DB = pytest.mark.skipif(
 )
 
 
-@pytest.fixture
+@pytest_asyncio.fixture(loop_scope="function")
 async def e2e_app() -> AsyncGenerator[Any, None]:
     """Create app with real DB but fake providers."""
     from careintel.infrastructure.ai.demo_adapter import DemoLLMProvider
@@ -60,7 +63,7 @@ async def e2e_app() -> AsyncGenerator[Any, None]:
     await engine.dispose()
 
 
-@pytest.fixture
+@pytest_asyncio.fixture(loop_scope="function")
 async def e2e_session(e2e_app: Any) -> AsyncGenerator[AsyncSession, None]:
     """Provide a real DB session for assertions."""
     session_factory = e2e_app.state.db_session_factory
@@ -68,7 +71,7 @@ async def e2e_session(e2e_app: Any) -> AsyncGenerator[AsyncSession, None]:
         yield session
 
 
-@pytest.fixture
+@pytest_asyncio.fixture(loop_scope="function")
 async def e2e_client(e2e_app: Any) -> AsyncGenerator[AsyncClient, None]:
     """Test client hitting the E2E app."""
     transport = ASGITransport(app=e2e_app)
@@ -102,8 +105,14 @@ class TestGoldenPath:
                 id=user_id,
                 is_active=True,
                 roles={"admin"},
-                permissions={Permission.CONSENT_WRITE, Permission.CASE_WRITE, Permission.CASE_READ, Permission.EVIDENCE_WRITE, Permission.EVIDENCE_READ},
-                role_facilities={}
+                permissions={
+                    Permission.CONSENT_WRITE,
+                    Permission.CASE_WRITE,
+                    Permission.CASE_READ,
+                    Permission.EVIDENCE_WRITE,
+                    Permission.EVIDENCE_READ,
+                },
+                role_facilities={"admin": None},
             )
 
         e2e_app.dependency_overrides[get_current_user] = mock_auth
@@ -121,7 +130,7 @@ class TestGoldenPath:
             email=f"admin_{user_id}@example.com",
             display_name="Admin",
             password_hash="fake",
-            is_active=True
+            is_active=True,
         )
         e2e_session.add(admin_orm)
 
@@ -131,7 +140,7 @@ class TestGoldenPath:
             email=f"subject_{subject_id}@example.com",
             display_name="Subject",
             password_hash="fake",
-            is_active=True
+            is_active=True,
         )
         e2e_session.add(user_orm)
 
@@ -146,7 +155,7 @@ class TestGoldenPath:
             state="ACTIVE",
             notice_version="1.0",
             captured_by=user_id,
-            captured_at=None,
+            captured_at=datetime.datetime.now(datetime.UTC),
         )
         e2e_session.add(consent)
         await e2e_session.commit()
@@ -159,7 +168,7 @@ class TestGoldenPath:
                 "facility_id": str(uuid.uuid4()),
                 "consent_id": str(consent_id),
                 "priority": "ROUTINE",
-            }
+            },
         )
 
         # Depending on if trailing slash was required or not in our router
@@ -171,7 +180,7 @@ class TestGoldenPath:
                     "facility_id": str(uuid.uuid4()),
                     "consent_id": str(consent_id),
                     "priority": "ROUTINE",
-                }
+                },
             )
 
         assert response.status_code == 201
@@ -181,7 +190,7 @@ class TestGoldenPath:
 
         # 4. Evidence Submission
         # Wait, the evidence endpoint is /api/v1/cases/{case_id}/evidence/text or something?
-        # Let's check evidence router for exact path. If not available, we can skip and assert what we have.
+        # The current test does not continue through evidence processing.
 
         # 5. Database Assertions
         from sqlalchemy import select
@@ -199,12 +208,28 @@ class TestGoldenPath:
 
         # Verify Outbox entry
         from careintel.persistence.models.case import CaseOutboxORM
+
         outbox_stmt = select(CaseOutboxORM).where(CaseOutboxORM.case_id == uuid.UUID(case_id))
         outbox_result = await e2e_session.execute(outbox_stmt)
         outbox_events = outbox_result.scalars().all()
 
         assert len(outbox_events) > 0
         event_types = [e.event_type for e in outbox_events]
-        assert "case_created" in event_types or "CASE_CREATED" in event_types or any("created" in e.lower() for e in event_types)
+        assert (
+            "case_created" in event_types
+            or "CASE_CREATED" in event_types
+            or any("created" in e.lower() for e in event_types)
+        )
+
+        from careintel.persistence.models.audit import AuditLogORM
+
+        audit_result = await e2e_session.execute(
+            select(AuditLogORM).where(
+                AuditLogORM.target_id == uuid.UUID(case_id),
+                AuditLogORM.target_type == "case",
+            )
+        )
+        audit_events = audit_result.scalars().all()
+        assert any(event.event_type == "case_created" for event in audit_events)
 
         e2e_app.dependency_overrides.clear()
