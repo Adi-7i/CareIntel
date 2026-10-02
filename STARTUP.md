@@ -827,3 +827,257 @@ Production service set after external resources and secrets are configured:
 After all three processes are running, check liveness, readiness, worker response, authentication,
 and the authenticated profile. Run `scripts.bootstrap_admin` only once on a database with no ADMIN
 assignment.
+
+## 20. Docker Deployment
+
+This section covers the container-based deployment of CareIntel using the `Dockerfile` and
+`compose.yaml` files in the repository root. All external services (PostgreSQL/Supabase, Redis,
+Azure Blob Storage, Azure AI) remain external managed services. No local infrastructure containers
+are started.
+
+**No default administrator account is created automatically by the image build or container
+startup.** Administrator provisioning requires an explicit, interactive step documented in
+section 13 of this guide.
+
+### 20.1 Prerequisites
+
+- **Docker 24+** and **Docker Compose v2.20+** (`docker compose` as a plugin, not `docker-compose`).
+- All external services provisioned and reachable: PostgreSQL/Supabase, Redis, Azure Blob Storage,
+  Azure OpenAI-compatible deployments, Azure Document Intelligence.
+- The `DATABASE_URL` must use the `postgresql+asyncpg://` scheme; see section 3 for details.
+- If the PostgreSQL host resolves only to IPv6 and the container host lacks IPv6 routing, use the
+  Supabase Session Pooler (port 5432) which resolves to IPv4:
+  `postgresql+asyncpg://postgres.PROJECT_REF:PASSWORD@aws-0-REGION.pooler.supabase.com:5432/postgres?ssl=require`
+
+### 20.2 Environment configuration
+
+Copy the template to `.env` and fill in all values:
+
+```bash
+cp .env.example .env
+chmod 600 .env
+```
+
+`.env` is read by Docker Compose from the `env_file` directive. It is excluded from the Docker
+build context by `.dockerignore` and is never copied into any image layer.
+
+**Required in every environment:**
+
+```dotenv
+DATABASE_URL=postgresql+asyncpg://USER:PASSWORD@HOST:5432/DATABASE?ssl=require
+SECRET_KEY=<long-random-string>
+JWT_SECRET_KEY=<different-long-random-string>
+```
+
+**Required in production (`APP_ENV=production`):**
+
+```dotenv
+APP_ENV=production
+APP_DEBUG=false
+AZURE_STORAGE_CONNECTION_STRING=<connection-string>
+REDIS_URL=redis://default:PASSWORD@HOST:PORT
+AZURE_OPENAI_API_KEY=<key>
+AZURE_OPENAI_ENDPOINT=https://YOUR_RESOURCE.openai.azure.com/
+AZURE_LLM_DEPLOYMENT=<deployment>
+LLM_PROVIDER=azure_openai
+EMBEDDING_PROVIDER=azure_openai
+STT_PROVIDER=azure_openai_diarize
+TTS_PROVIDER=azure_openai
+OCR_PROVIDER=azure_document_intelligence
+AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT=https://YOUR_RESOURCE.cognitiveservices.azure.com/
+AZURE_DOCUMENT_INTELLIGENCE_KEY=<key>
+```
+
+In a deployed environment (staging/production), prefer injecting secrets through the platform's
+secret manager or environment injection rather than copying a `.env` file. Never commit `.env`.
+
+Validate configuration without printing secrets (same check as section 4):
+
+```bash
+docker run --rm --env-file .env careintel:latest \
+  python -c "from careintel.core.config import Settings; s=Settings(); print('CONFIG_OK'); print(f'APP_ENV={s.app_env}')"
+```
+
+### 20.3 Build the image
+
+```bash
+docker build -t careintel:latest .
+```
+
+The Dockerfile uses a two-stage build:
+
+1. **Builder stage**: installs `uv`, resolves all production dependencies from the committed
+   `uv.lock`, and builds the `careintel` package.
+2. **Runtime stage**: `python:3.12-slim` base with only `libmagic1` as an OS-level dependency,
+   non-root user (`appuser`, UID 1001), venv and source copied from the builder.
+
+Build arguments are not used. No secrets appear in any layer.
+
+To rebuild after dependency changes (updates `uv.lock`):
+
+```bash
+docker build --no-cache -t careintel:latest .
+```
+
+### 20.4 Database migrations
+
+**Run migrations explicitly before starting or updating services.** Migrations are never run
+automatically on API or worker startup. Never run migrations from multiple containers concurrently.
+
+```bash
+# Apply all pending migrations
+docker compose run --rm migrate
+
+# Verify the applied revision
+docker compose run --rm migrate alembic current
+
+# Verify schema drift (no new operations expected after migration)
+docker compose run --rm migrate alembic check
+```
+
+The `migrate` service in `compose.yaml` runs `alembic upgrade head` and exits. It uses the same
+image and environment as the API and worker, ensuring migration context is identical to production.
+
+A healthy database after migration reports `0014 (head)` from `alembic current` and
+`No new upgrade operations detected` from `alembic check`.
+
+### 20.5 Start the services
+
+Start all three application processes:
+
+```bash
+docker compose up -d api worker outbox
+```
+
+Or start them individually:
+
+```bash
+docker compose up -d api
+docker compose up -d worker
+docker compose up -d outbox
+```
+
+**Service roles:**
+
+| Service | Command | Role |
+|---------|---------|------|
+| `api` | `uvicorn careintel.main:app --host 0.0.0.0 --port 8000 --workers 1` | FastAPI HTTP server |
+| `worker` | `celery -A careintel.workers.celery_app:celery_app worker ...` | Async task execution |
+| `outbox` | `python -m careintel.workers.outbox_runner --interval 2` | PostgreSQL outbox dispatcher |
+
+All three services must be running for full async workflow execution. The outbox dispatcher is a
+separate required process — the Celery worker does not poll the PostgreSQL outbox tables.
+
+### 20.6 Health verification
+
+```bash
+# Liveness: process is alive
+curl --fail --silent --show-error http://127.0.0.1:8000/api/v1/health/live
+
+# Readiness: all dependencies are reachable
+curl --fail --silent --show-error http://127.0.0.1:8000/api/v1/health/ready
+
+# Celery worker is responding
+docker compose exec worker \
+  celery -A careintel.workers.celery_app:celery_app inspect ping --timeout 10
+```
+
+Expected liveness response: `{"status":"ok"}`
+
+Expected readiness response (HTTP 200):
+```json
+{"status":"ready","checks":{"database":"ok","redis":"ok","blob_storage":"ok"},"latency_ms":0.0}
+```
+
+A readiness 503 with a specific check set to `"error"` identifies the failing dependency.
+
+### 20.7 Logs and troubleshooting
+
+```bash
+# Follow all service logs
+docker compose logs -f
+
+# Follow a specific service
+docker compose logs -f api
+docker compose logs -f worker
+docker compose logs -f outbox
+
+# Check running containers
+docker compose ps
+```
+
+Logs are emitted as structured JSON to stdout. The `X-Correlation-ID` header propagates through
+all API logs for request tracing.
+
+**Common issues:**
+
+- `DATABASE_URL must use the asyncpg driver scheme`: change scheme to `postgresql+asyncpg://`.
+- `AZURE_STORAGE_CONNECTION_STRING must be set in production`: set the variable before starting.
+- `Production provider configuration must use fully configured external adapters`: all Azure AI
+  provider variables and the API key must be set when `APP_ENV=production`.
+- Readiness returns 503 for `database`: verify `DATABASE_URL` and network connectivity from the
+  container to the database host. On IPv4-only hosts, use the Supabase Session Pooler address.
+- `Outbox rows stay pending`: confirm the `outbox` service is running. The Celery worker does not
+  dispatch from the PostgreSQL outbox.
+
+### 20.8 Administrator bootstrap (first deployment only)
+
+Run only once, on a database that has no ADMIN role assignment:
+
+```bash
+docker compose run --rm \
+  -e APP_ENV=production \
+  api \
+  python -m scripts.bootstrap_admin
+```
+
+This command is interactive and prompts for email, display name, password, and a scope
+confirmation token. The password is not echoed and must not be passed as a command-line argument.
+See section 13 for the complete bootstrap contract and section 14 for an example session.
+
+**No administrator account is created during image build or service startup.**
+
+### 20.9 Shutdown and update procedure
+
+```bash
+# Stop all services gracefully
+docker compose down
+
+# Stop and remove volumes (if any were created)
+docker compose down -v
+
+# Rebuild and redeploy
+docker build -t careintel:latest .
+docker compose run --rm migrate           # apply new migrations
+docker compose up -d api worker outbox    # restart services
+```
+
+The Celery worker has a `stop_grace_period: 370s` (just past the hard task time limit of 360s)
+to allow in-flight tasks to complete before the container is forcefully terminated.
+
+### 20.10 External service configuration reference
+
+All external services are configured through environment variables, not through container
+definitions. See section 3 for the full variable reference. Summary:
+
+| Service | Key variables |
+|---------|--------------|
+| PostgreSQL/Supabase | `DATABASE_URL` |
+| Redis | `REDIS_URL` |
+| Azure Blob Storage | `AZURE_STORAGE_CONNECTION_STRING`, `AZURE_STORAGE_CONTAINER` |
+| Azure OpenAI | `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_API_KEY`, deployment names |
+| Azure Document Intelligence | `AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT`, `AZURE_DOCUMENT_INTELLIGENCE_KEY` |
+
+### 20.11 Production secret management
+
+Docker Compose `env_file` is suitable for development. For production:
+
+- **Azure**: use Azure Key Vault with the container's managed identity or inject secrets via
+  Azure Container Apps / AKS secret volumes.
+- **AWS**: use AWS Secrets Manager with ECS task definitions or Kubernetes External Secrets.
+- **Kubernetes**: mount secrets as environment variables from Kubernetes Secret objects; do not
+  use ConfigMaps for sensitive values.
+
+Never commit `.env` with real credentials. Never use Docker build arguments for secrets.
+Never log or print environment variables in health checks or startup output.
+

@@ -1,0 +1,96 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# CareIntel — .dockerignore
+#
+# Keeps the build context minimal and prevents secrets, development artifacts,
+# local state, and unrelated files from entering any image layer.
+# ──────────────────────────────────────────────────────────────────────────────
+
+# ── Secrets and local configuration — NEVER in the image ─────────────────────
+.env
+.env.*
+.env.local
+.env.production
+.env.*.local
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.cer
+
+# ── Virtual environments ───────────────────────────────────────────────────────
+.venv/
+venv/
+env/
+ENV/
+
+# ── Git history and VCS metadata ─────────────────────────────────────────────
+.git/
+.gitignore
+.gitattributes
+.github/
+
+# ── Python bytecode and caches ─────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# ── Test artifacts ────────────────────────────────────────────────────────────
+tests/
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+pytest.ini
+test_*.py
+*_test.py
+
+# ── Development tooling caches ────────────────────────────────────────────────
+.mypy_cache/
+.ruff_cache/
+.tox/
+
+# ── IDE and editor metadata ───────────────────────────────────────────────────
+.idea/
+.vscode/
+*.swp
+*.swo
+*.sublime-project
+*.sublime-workspace
+
+# ── OS generated files ────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── Logs and temporary files ─────────────────────────────────────────────────
+*.log
+*.tmp
+/tmp/
+
+# ── Docker files themselves (not needed inside the image) ────────────────────
+Dockerfile
+Dockerfile.*
+compose.yaml
+compose.yml
+docker-compose.yaml
+docker-compose.yml
+.dockerignore
+
+# ── Documentation ────────────────────────────────────────────────────────────
+# README.md is intentionally NOT excluded here: hatchling (the build backend
+# declared in pyproject.toml) requires it to validate package metadata during
+# the builder stage. It is not copied into the runtime stage.
+STARTUP.md
+RELEASE_EVIDENCE.md
+
+
+# ── Development-only scripts and notebooks ───────────────────────────────────
+test_celery.py
+test_env.py

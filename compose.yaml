@@ -1,0 +1,136 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# CareIntel — Docker Compose service definitions
+#
+# This file defines the three application processes:
+#   api       — FastAPI/Uvicorn HTTP server
+#   worker    — Celery async task worker
+#   outbox    — PostgreSQL transactional-outbox dispatcher
+#
+# External managed services (PostgreSQL/Supabase, Redis, Azure Blob Storage,
+# Azure AI) are NOT defined here. They are injected via environment variables.
+# No local PostgreSQL, Redis, Azurite, or AI simulator containers are started.
+#
+# Database migrations are NOT run automatically on container startup.
+# Run migrations explicitly before starting or updating services:
+#
+#   docker compose run --rm migrate
+#
+# Secret injection:
+#   Secrets must be supplied via .env (development) or the deployment
+#   platform's secret manager (staging/production). Never commit a real .env.
+#   Copy .env.example to .env and fill in real values locally.
+#
+# Usage:
+#   docker compose up -d api worker outbox
+#   docker compose logs -f
+#   docker compose down
+# ──────────────────────────────────────────────────────────────────────────────
+
+name: careintel
+
+# ── Shared defaults applied to all application services ──────────────────────
+x-app-defaults: &app-defaults
+  build:
+    context: .
+    dockerfile: Dockerfile
+    target: runtime
+  image: careintel:latest
+  # Load runtime configuration from the local .env file.
+  # In production, replace or augment this with your platform secret mechanism.
+  env_file:
+    - path: .env
+      required: false
+  # Non-root user matches the UID/GID created in the Dockerfile.
+  user: "1001:1001"
+  # Prevent credential leakage through security_opt.
+  security_opt:
+    - no-new-privileges:true
+  restart: unless-stopped
+
+services:
+
+  # ── API server (FastAPI / Uvicorn) ─────────────────────────────────────────
+  api:
+    <<: *app-defaults
+    container_name: careintel-api
+    command:
+      - uvicorn
+      - careintel.main:app
+      - --host
+      - "0.0.0.0"
+      - --port
+      - "8000"
+      - --workers
+      - "1"
+    ports:
+      - "8000:8000"
+    healthcheck:
+      # /api/v1/health/live returns 200 {"status":"ok"} if the process is alive.
+      # It does not verify downstream dependencies; use /api/v1/health/ready for
+      # readiness. Liveness is appropriate for container restart decisions.
+      test:
+        - CMD
+        - python
+        - -c
+        - |
+          import urllib.request, sys
+          try:
+              r = urllib.request.urlopen('http://localhost:8000/api/v1/health/live', timeout=5)
+              sys.exit(0 if r.status == 200 else 1)
+          except Exception:
+              sys.exit(1)
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  # ── Celery async task worker ───────────────────────────────────────────────
+  worker:
+    <<: *app-defaults
+    container_name: careintel-worker
+    # Verified command from STARTUP.md §7, matched against celery_app.py
+    # queue list and task discovery configuration.
+    command:
+      - celery
+      - -A
+      - careintel.workers.celery_app:celery_app
+      - worker
+      - --loglevel=INFO
+      - -Q
+      - careintel_default,careintel_processing,careintel_retrieval,careintel_ai,careintel_workflow
+    # Workers do not serve HTTP traffic; no ports are published.
+    # Graceful shutdown: SIGTERM triggers Celery's warm shutdown, which waits
+    # for in-flight tasks to complete up to the task hard time limit (360s).
+    stop_grace_period: 370s
+
+  # ── Transactional-outbox dispatcher ───────────────────────────────────────
+  # This is a separate required process as documented in STARTUP.md §7.
+  # The Celery worker does not poll PostgreSQL outboxes. The dispatcher reads
+  # the case and evidence outbox tables and forwards events to the Redis broker.
+  # Only one dispatcher instance should be running (or rely on its PostgreSQL
+  # advisory lock for safe multi-instance deployment).
+  outbox:
+    <<: *app-defaults
+    container_name: careintel-outbox
+    command:
+      - python
+      - -m
+      - careintel.workers.outbox_runner
+      - --interval
+      - "2"
+    stop_grace_period: 15s
+
+  # ── Database migration runner (one-shot; not a long-running service) ────────
+  # Run explicitly before starting or updating the application:
+  #   docker compose run --rm migrate
+  # This service exits immediately after migrations complete.
+  # Never start this service as a dependency of api or worker — doing so
+  # would run migrations on every replica restart.
+  migrate:
+    <<: *app-defaults
+    container_name: careintel-migrate
+    command:
+      - alembic
+      - upgrade
+      - head
+    restart: "no"
