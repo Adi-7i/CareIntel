@@ -946,6 +946,7 @@ A healthy database after migration reports `0014 (head)` from `alembic current` 
 Start all three application processes:
 
 ```bash
+docker compose up -d
 docker compose up -d api worker outbox
 ```
 

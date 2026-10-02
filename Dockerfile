@@ -115,7 +115,7 @@ EXPOSE 8000
 # Overridden by compose.yaml for the worker and outbox services.
 # --workers 1: one process per container; scale via replicas, not fork.
 # Do NOT add --reload in production.
-CMD ["uvicorn", "careintel.main:app", \
+CMD ["python", "-m", "uvicorn", "careintel.main:app", \
      "--host", "0.0.0.0", \
      "--port", "8000", \
      "--workers", "1"]

@@ -54,6 +54,8 @@ services:
     <<: *app-defaults
     container_name: careintel-api
     command:
+      - python
+      - -m
       - uvicorn
       - careintel.main:app
       - --host
@@ -91,6 +93,8 @@ services:
     # Verified command from STARTUP.md §7, matched against celery_app.py
     # queue list and task discovery configuration.
     command:
+      - python
+      - -m
       - celery
       - -A
       - careintel.workers.celery_app:celery_app
@@ -130,6 +134,8 @@ services:
     <<: *app-defaults
     container_name: careintel-migrate
     command:
+      - python
+      - -m
       - alembic
       - upgrade
       - head
