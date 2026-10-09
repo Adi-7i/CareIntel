@@ -12,7 +12,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { Separator } from "@/components/ui/separator"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu"
 import { Settings, User, LogOut, ChevronDown, Bell, CheckCircle2 } from "lucide-react"
 
@@ -278,16 +278,14 @@ export default function SpecimenPage() {
                 </DropdownMenuContent>
               </DropdownMenu>
 
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger render={<Button variant="ghost" size="icon" aria-label="Alerts" className="rounded-full" />}>
-                    <Bell className="size-5" />
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p>3 Unread Alerts</p>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger render={<Button variant="ghost" size="icon" aria-label="Alerts" className="rounded-full" />}>
+                  <Bell className="size-5" />
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>3 Unread Alerts</p>
+                </TooltipContent>
+              </Tooltip>
             </div>
           </div>
         </section>
