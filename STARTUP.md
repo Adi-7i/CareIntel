@@ -28,6 +28,61 @@ approve cases or control workflow transitions.
 
 The ASGI entry point is `careintel.main:app`. API routes are under `/api/v1`.
 
+## Automated local setup and startup
+
+From the repository root:
+
+```bash
+./setup_backend.sh
+./start.sh
+```
+
+`setup_backend.sh` installs `uv` locally when unavailable, obtains Python 3.12 as needed,
+creates `.venv`, and installs runtime and development dependencies from `uv.lock` using
+`uv sync --all-extras --frozen`. Downloaded tools and caches live in the ignored `.tools/`
+directory. It installs system `libmagic` if missing using the available package manager;
+this can require administrator access. It preserves existing `.env` credentials and provider
+choices, restricts file permissions to `600`, and converts older comma-separated CORS origins
+to the required JSON list. If `.env` is missing, it creates development configuration with
+random application/JWT secrets and demo providers. Configure `DATABASE_URL` before continuing.
+
+Setup checks the configured external database and Redis, applies pending Alembic migrations,
+and verifies the database revision and pgvector. PostgreSQL, Redis, and Azure resources remain
+external services: supply their connection details in `.env` or the process environment.
+For installation before service configuration, run `./setup_backend.sh --skip-migrations`,
+then configure `.env` and rerun `./setup_backend.sh` to finish database initialization.
+If the database reports a revision missing from this checkout, setup and startup stop before
+changing its schema. Restore the matching code/migration history or use a separate development
+database; do not reset the version table or stamp it to bypass this check.
+
+`start.sh` uses `.venv` directly; activating the environment is unnecessary. Both shell scripts
+resolve the repository directory themselves and can be invoked from another working directory.
+Startup verifies configuration, database schema, pgvector, libmagic, and configured Redis before
+starting Uvicorn with `APP_HOST`, `APP_PORT`, and `APP_LOG_LEVEL`. When `REDIS_URL` is set, it also
+starts a Celery worker (two concurrent worker processes) and the outbox dispatcher. Ctrl-C or
+SIGTERM stops all child process groups; if any service exits, the other services are stopped.
+Startup does not install dependencies or change the database schema; rerun setup after updates.
+
+```bash
+./start.sh --reload                  # API auto-reload for development only
+./start.sh --api-only                # API without worker/dispatcher
+./start.sh --with-workers            # Also use the development broker fallback
+./start.sh --check                   # Check dependencies/schema without starting services
+./start.sh --host 0.0.0.0 --port 8001 # Override the configured bind address
+./start.sh --help
+```
+
+`--reload` is rejected in production. With no Redis configured, the default is API-only and
+asynchronous processing requires a Redis broker plus `--with-workers` or `REDIS_URL`.
+These scripts support local operation; production supervision, TLS, and resource provisioning
+still require deployment configuration as described below.
+
+If the PostgreSQL startup check fails, its message identifies the host/port and distinguishes
+DNS, timeout, authentication, TLS, connection-limit, and network failures without displaying
+credentials. Run `./start.sh --check` to retry the check. For a timeout on a slow connection,
+set `DEPENDENCY_CONNECT_TIMEOUT_SECONDS=30` in `.env`; this does not fix incorrect credentials,
+an unavailable database, or blocked network access.
+
 ## 1. Prerequisites
 
 The documented shell commands assume a POSIX environment such as Linux or macOS. Native Windows
@@ -324,7 +379,7 @@ Verify that ORM metadata would not generate another migration:
 .venv/bin/alembic check
 ```
 
-The current repository head is **`0014`**. A healthy current database reports `0014 (head)`, and a
+The current repository head is **`0015`**. A healthy current database reports `0015 (head)`, and a
 clean drift check reports `No new upgrade operations detected.`
 
 The drift check may also emit Alembic's warning that the computed default on

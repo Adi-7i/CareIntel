@@ -12,6 +12,7 @@ build/
 
 # ── Virtual environments ──────────────────────────
 .venv/
+.tools/
 venv/
 env/
 ENV/

@@ -409,6 +409,11 @@ Every response carries an `X-Correlation-ID`; callers may supply one and receive
 
 ## Run locally
 
+For automated setup using the committed lock file, run `./setup_backend.sh`, then `./start.sh`.
+Configure the external PostgreSQL database in `.env` first. The scripts install Python 3.12 and
+locked dependencies, apply migrations, and start the API plus workers when Redis is configured.
+See [the automated startup instructions](STARTUP.md#automated-local-setup-and-startup) for options.
+
 ### Prerequisites
 
 - Python `3.12.x`
@@ -525,7 +530,7 @@ CareIntel/
 │   │   ├── models/             # SQLAlchemy ORM model families
 │   │   └── repositories/       # Persistence operations by aggregate
 │   └── workers/                # Celery app, task entry points, worker context
-├── migrations/                 # Alembic revisions 0001–0010
+├── migrations/                 # Alembic revisions 0001–0015
 ├── scripts/                    # Admin seed and provider/infra verification tools
 ├── tests/
 │   ├── unit/                   # Domain and service tests
