@@ -1,0 +1,163 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-serif);
+  --font-heading: var(--font-serif);
+  --font-serif: var(--font-serif);
+  
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary-hover: var(--primary-hover);
+  
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary-hover: var(--secondary-hover);
+  
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  
+  --color-destructive: var(--status-error);
+  --color-destructive-foreground: var(--status-error-text);
+  
+  --color-border: var(--border);
+  --color-input: var(--input-bg);
+  --color-ring: var(--ring);
+  
+  --color-card: var(--surface);
+  --color-card-foreground: var(--foreground);
+  
+  --color-popover: var(--surface);
+  --color-popover-foreground: var(--foreground);
+  
+  --radius-xs: var(--radius-xs);
+  --radius-sm: var(--radius-sm);
+  --radius-md: var(--radius-md);
+  --radius-lg: var(--radius-lg);
+  --radius-xl: var(--radius-xl);
+
+  --shadow-xs: var(--shadow-xs);
+  --shadow-sm: var(--shadow-sm);
+  --shadow-md: var(--shadow-md);
+  --shadow-lg: var(--shadow-lg);
+}
+
+@layer base {
+  :root {
+    /* CareIntel Raw Palette */
+    --ci-navy-900: oklch(0.25 0.05 250);
+    --ci-navy-800: oklch(0.30 0.06 250);
+    --ci-navy-700: oklch(0.36 0.07 250);
+    --ci-navy-100: oklch(0.95 0.02 250);
+    --ci-teal-700: oklch(0.50 0.10 180);
+    --ci-teal-600: oklch(0.58 0.11 180);
+    --ci-teal-100: oklch(0.95 0.03 160);
+    --ci-slate-800: oklch(0.32 0.04 250);
+    --ci-slate-500: oklch(0.55 0.04 250);
+    --ci-slate-300: oklch(0.91 0.02 250);
+    --ci-slate-100: oklch(0.98 0.01 250);
+    --ci-white: oklch(1 0 0);
+
+    /* Semantic Aliases - overriding shadcn defaults */
+    --background: oklch(0.98 0.01 250); /* ci-slate-100 */
+    --surface: oklch(1 0 0); /* ci-white */
+    --surface-raised: oklch(1 0 0);
+    --foreground: oklch(0.32 0.04 250); /* ci-slate-800 */
+    --foreground-muted: oklch(0.55 0.04 250); /* ci-slate-500 */
+    
+    --primary: oklch(0.50 0.10 180); /* ci-teal-700 */
+    --primary-hover: oklch(0.58 0.11 180); /* ci-teal-600 */
+    --primary-foreground: oklch(1 0 0); /* ci-white */
+    
+    --secondary: oklch(0.30 0.06 250); /* ci-navy-800 */
+    --secondary-hover: oklch(0.36 0.07 250); /* ci-navy-700 */
+    --secondary-foreground: oklch(1 0 0); /* ci-white */
+    
+    --accent: oklch(0.95 0.03 160); /* ci-teal-100 */
+    --accent-foreground: oklch(0.50 0.10 180); /* ci-teal-700 */
+    
+    --border: oklch(0.91 0.02 250); /* ci-slate-300 */
+    --input-bg: oklch(1 0 0); /* ci-white */
+    --ring: oklch(0.50 0.10 180); /* ci-teal-700 */
+    
+    --muted: oklch(0.95 0.02 250); /* ci-navy-100 */
+    --muted-foreground: oklch(0.55 0.04 250); /* ci-slate-500 */
+
+    /* Status Tokens */
+    --status-success: oklch(0.60 0.15 140);
+    --status-success-surface: oklch(0.96 0.04 140);
+    --status-success-text: oklch(0.35 0.10 140);
+    
+    --status-warning: oklch(0.70 0.15 70);
+    --status-warning-surface: oklch(0.96 0.04 70);
+    --status-warning-text: oklch(0.40 0.12 70);
+    
+    --status-error: oklch(0.55 0.18 20);
+    --status-error-surface: oklch(0.96 0.03 20);
+    --status-error-text: oklch(0.35 0.15 20);
+    
+    --status-info: oklch(0.60 0.15 250);
+    --status-info-surface: oklch(0.96 0.03 250);
+    --status-info-text: oklch(0.35 0.10 250);
+
+    /* Typography */
+    --font-serif: "Times New Roman", Times, serif;
+    --text-xs: 0.75rem;
+    --text-sm: 0.875rem;
+    --text-base: 1rem;
+    --text-md: 1.0625rem;
+    --text-lg: 1.125rem;
+    --text-xl: 1.25rem;
+    --text-2xl: 1.5rem;
+    --text-3xl: 1.875rem;
+    
+    --prose-width: 70ch;
+
+    /* Geometry */
+    --radius-xs: 2px;
+    --radius-sm: 4px;
+    --radius-md: 6px;
+    --radius-lg: 8px;
+    --radius-xl: 12px;
+
+    /* Shadows */
+    --shadow-xs: 0 1px 2px rgba(22, 50, 79, 0.04);
+    --shadow-sm: 0 1px 3px rgba(22, 50, 79, 0.08), 0 1px 2px rgba(22, 50, 79, 0.04);
+    --shadow-md: 0 4px 6px rgba(22, 50, 79, 0.07), 0 2px 4px rgba(22, 50, 79, 0.06);
+    --shadow-lg: 0 10px 15px rgba(22, 50, 79, 0.08), 0 4px 6px rgba(22, 50, 79, 0.05);
+
+    /* Transitions */
+    --transition-fast: 100ms ease;
+    --transition-base: 150ms ease;
+    --transition-slow: 250ms ease;
+  }
+
+  * {
+    @apply border-border outline-ring/50;
+    box-sizing: border-box;
+  }
+  
+  body {
+    @apply bg-background text-foreground;
+    font-family: var(--font-serif);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  
+  html {
+    font-family: var(--font-serif);
+  }
+  
+  h1, h2, h3, h4, h5, h6,
+  p, span, label, input, textarea, select, button,
+  table, th, td,
+  dialog, [role="menu"], [role="tooltip"] {
+    font-family: var(--font-serif);
+  }
+}
