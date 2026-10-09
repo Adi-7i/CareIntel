@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { AppShell } from "@/components/layout/app-shell";
 
 export default function ShellLayout({
@@ -5,5 +6,9 @@ export default function ShellLayout({
 }: {
   children: React.ReactNode;
 }) {
-  return <AppShell>{children}</AppShell>;
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-background" />}>
+      <AppShell>{children}</AppShell>
+    </Suspense>
+  );
 }

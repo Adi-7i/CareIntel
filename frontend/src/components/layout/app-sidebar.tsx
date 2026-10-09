@@ -11,19 +11,21 @@ import {
   ClipboardCheck, 
   ArrowUpFromLine,
   PanelLeftClose,
-  PanelLeftOpen
+  PanelLeftOpen,
+  Send
 } from "lucide-react";
 import { NavItemType } from "@/types/navigation";
 import { NavItem } from "@/components/navigation/nav-item";
 import { Button } from "@/components/ui/button";
 
 const navItems: NavItemType[] = [
-  { href: "/", label: "Overview", icon: LayoutDashboard },
+  { href: "/dashboard", label: "Overview", icon: LayoutDashboard },
   { href: "/cases", label: "Cases", icon: FolderOpen },
   { href: "/evidence", label: "Evidence", icon: FileText },
   { href: "/intelligence", label: "Clinical Intelligence", icon: BrainCircuit },
   { href: "/review", label: "Review Workspace", icon: ClipboardCheck },
-  { href: "/escalations", label: "Escalations & Handoffs", icon: ArrowUpFromLine },
+  { href: "/escalations", label: "Escalations", icon: ArrowUpFromLine },
+  { href: "/handoff", label: "Referral & Handoff", icon: Send },
 ];
 
 interface AppSidebarProps {
@@ -36,8 +38,8 @@ export function AppSidebar({ isCollapsed, onToggleCollapse, className }: AppSide
   const pathname = usePathname();
 
   const isRouteActive = (href: string) => {
-    if (href === "/") {
-      return pathname === "/";
+    if (href === "/dashboard") {
+      return pathname === "/dashboard";
     }
     return pathname.startsWith(href);
   };
