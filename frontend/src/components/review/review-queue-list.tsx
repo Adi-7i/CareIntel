@@ -6,7 +6,6 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { EmptyState } from "@/components/ui/empty-state";
-import { ReviewQueueBadge } from "@/components/review/review-queue-badge";
 
 export function ReviewQueueList() {
   const [statusFilter, setStatusFilter] = React.useState<string>("all");
