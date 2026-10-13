@@ -6,6 +6,7 @@ import { FileEvidenceForm } from "@/components/evidence/file-evidence-form";
 import { EvidenceMetadataCard } from "@/components/evidence/evidence-metadata-card";
 import { TaskStatusPanel } from "@/components/evidence/task-status-panel";
 import { ProcessingTriggerForm } from "@/components/evidence/processing-trigger-form";
+import { ExtractionDisplay } from "@/components/evidence/extraction-display";
 
 export const metadata: Metadata = {
   title: "Evidence & Document Workspace | CareIntel",
@@ -29,7 +30,7 @@ export default function EvidencePage() {
           System Integration Notice
         </p>
         <p className="font-serif text-sm text-muted-foreground">
-          This workspace is prepared for backend integration. Evidence operations cannot be executed until the authenticated session and backend connection are established. The evidence list is intentionally omitted as no such endpoint exists in the current system.
+          This workspace is prepared for backend integration. Evidence operations cannot be executed until the authenticated session and backend connection are established. The evidence list is intentionally omitted as no such endpoint exists in the current system (BG-005).
         </p>
       </div>
 
@@ -75,6 +76,8 @@ export default function EvidencePage() {
           </div>
           
           <TaskStatusPanel />
+
+          <ExtractionDisplay />
         </TabsContent>
       </Tabs>
     </div>

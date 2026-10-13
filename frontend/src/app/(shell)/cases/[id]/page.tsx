@@ -7,10 +7,15 @@ export const metadata: Metadata = {
   description: "View and manage clinical case details",
 };
 
-export default function CaseDetailsPage() {
+interface CaseDetailsPageProps {
+  params: Promise<{ id: string }>;
+}
+
+export default async function CaseDetailsPage({ params }: CaseDetailsPageProps) {
+  const { id } = await params;
   return (
     <div className="max-w-6xl mx-auto py-2">
-      <CaseDetails />
+      <CaseDetails caseId={id} />
     </div>
   );
 }
